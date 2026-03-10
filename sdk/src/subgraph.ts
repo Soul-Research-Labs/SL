@@ -100,6 +100,26 @@ export class SubgraphClient {
     this.fetchFn = config.fetchFn ?? globalThis.fetch;
   }
 
+  // ── Input sanitization ─────────────────────────────
+
+  /** Sanitize a hex value for safe GraphQL interpolation. */
+  private static sanitizeHex(value: string): string {
+    const cleaned = value.toLowerCase().trim();
+    if (!/^0x[0-9a-f]+$/.test(cleaned)) {
+      throw new Error(`Invalid hex value: ${value}`);
+    }
+    return cleaned;
+  }
+
+  /** Sanitize an address for safe GraphQL interpolation. */
+  private static sanitizeAddress(value: string): string {
+    const cleaned = value.toLowerCase().trim();
+    if (!/^0x[0-9a-f]{40}$/.test(cleaned)) {
+      throw new Error(`Invalid address: ${value}`);
+    }
+    return cleaned;
+  }
+
   // ── Raw query helper ───────────────────────────────
 
   async query<T = unknown>(
@@ -144,8 +164,9 @@ export class SubgraphClient {
   async getDepositByCommitment(
     commitment: string,
   ): Promise<DepositEntity | null> {
+    const safe = SubgraphClient.sanitizeHex(commitment);
     const data = await this.query<{ deposits: DepositEntity[] }>(`{
-      deposits(where: { commitment: "${commitment}" }, first: 1) {
+      deposits(where: { commitment: "${safe}" }, first: 1) {
         id commitment leafIndex amount timestamp blockNumber transactionHash
       }
     }`);
@@ -172,15 +193,16 @@ export class SubgraphClient {
   async getTransferByNullifier(
     nullifier: string,
   ): Promise<TransferEntity | null> {
+    const safe = SubgraphClient.sanitizeHex(nullifier);
     const data = await this.query<{ transfers: TransferEntity[] }>(`{
-      transfers(where: { nullifier0: "${nullifier}" }, first: 1) {
+      transfers(where: { nullifier0: "${safe}" }, first: 1) {
         id nullifier0 nullifier1 outputCommitment0 outputCommitment1 newRoot blockNumber transactionHash timestamp
       }
     }`);
     if (data.transfers.length) return data.transfers[0];
     // Try nullifier1
     const data2 = await this.query<{ transfers: TransferEntity[] }>(`{
-      transfers(where: { nullifier1: "${nullifier}" }, first: 1) {
+      transfers(where: { nullifier1: "${safe}" }, first: 1) {
         id nullifier0 nullifier1 outputCommitment0 outputCommitment1 newRoot blockNumber transactionHash timestamp
       }
     }`);
@@ -207,8 +229,9 @@ export class SubgraphClient {
   async getWithdrawalsByRecipient(
     recipient: string,
   ): Promise<WithdrawalEntity[]> {
+    const safe = SubgraphClient.sanitizeAddress(recipient);
     const data = await this.query<{ withdrawals: WithdrawalEntity[] }>(`{
-      withdrawals(where: { recipient: "${recipient.toLowerCase()}" }, orderBy: blockNumber, orderDirection: desc) {
+      withdrawals(where: { recipient: "${safe}" }, orderBy: blockNumber, orderDirection: desc) {
         id nullifier0 nullifier1 recipient exitValue newRoot blockNumber transactionHash timestamp
       }
     }`);
@@ -278,14 +301,15 @@ export class SubgraphClient {
   // ── Convenience: is nullifier spent? ───────────────
 
   async isNullifierSpent(nullifier: string): Promise<boolean> {
-    const transfer = await this.getTransferByNullifier(nullifier);
+    const safe = SubgraphClient.sanitizeHex(nullifier);
+    const transfer = await this.getTransferByNullifier(safe);
     if (transfer) return true;
     const data = await this.query<{ withdrawals: { id: string }[] }>(`{
-      withdrawals(where: { nullifier0: "${nullifier}" }, first: 1) { id }
+      withdrawals(where: { nullifier0: "${safe}" }, first: 1) { id }
     }`);
     if (data.withdrawals.length) return true;
     const data2 = await this.query<{ withdrawals: { id: string }[] }>(`{
-      withdrawals(where: { nullifier1: "${nullifier}" }, first: 1) { id }
+      withdrawals(where: { nullifier1: "${safe}" }, first: 1) { id }
     }`);
     return data2.withdrawals.length > 0;
   }
