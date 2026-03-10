@@ -1,0 +1,105 @@
+# ──────────────────────────────────────────────────────────────
+# Soul Privacy Stack — Subgraph Schema (The Graph)
+# ──────────────────────────────────────────────────────────────
+
+# ── Privacy Pool Events ──────────────────────────────────────
+
+type Deposit @entity {
+  id: ID!
+  commitment: Bytes!
+  leafIndex: BigInt!
+  amount: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+type Transfer @entity {
+  id: ID!
+  nullifier0: Bytes!
+  nullifier1: Bytes!
+  outputCommitment0: Bytes!
+  outputCommitment1: Bytes!
+  newRoot: Bytes!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+}
+
+type Withdrawal @entity {
+  id: ID!
+  nullifier0: Bytes!
+  nullifier1: Bytes!
+  recipient: Bytes!
+  exitValue: BigInt!
+  newRoot: Bytes!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+}
+
+# ── Merkle Tree Snapshot ─────────────────────────────────────
+
+type MerkleTreeState @entity {
+  "Singleton — id: 'current'"
+  id: ID!
+  currentRoot: Bytes!
+  nextLeafIndex: BigInt!
+  lastUpdatedBlock: BigInt!
+}
+
+# ── Pool-level Aggregated Metrics ────────────────────────────
+
+type PoolMetrics @entity {
+  "Singleton — id: 'metrics'"
+  id: ID!
+  totalDeposits: BigInt!
+  totalWithdrawals: BigInt!
+  totalTransfers: BigInt!
+  totalDepositedValue: BigDecimal!
+  totalWithdrawnValue: BigDecimal!
+  uniqueDepositors: BigInt!
+  paused: Boolean!
+  lastPausedBy: Bytes
+  lastPauseReason: String
+}
+
+# ── Epochs ───────────────────────────────────────────────────
+
+type Epoch @entity {
+  id: ID!
+  epochId: BigInt!
+  nullifierRoot: Bytes!
+  nullifierCount: BigInt!
+  finalizedAt: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+  remoteSyncs: [CrossChainSync!]! @derivedFrom(field: "epoch")
+}
+
+type CrossChainSync @entity {
+  id: ID!
+  epoch: Epoch!
+  sourceChainId: BigInt!
+  root: Bytes!
+  receivedAt: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ── Governance ───────────────────────────────────────────────
+
+type TimelockTransaction @entity {
+  id: ID!
+  txHash: Bytes!
+  target: Bytes!
+  value: BigInt!
+  data: Bytes!
+  eta: BigInt!
+  status: String! # "queued" | "executed" | "cancelled"
+  queuedAt: BigInt!
+  executedAt: BigInt
+  cancelledAt: BigInt
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}

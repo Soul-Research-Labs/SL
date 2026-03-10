@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "pallets/privacy-pool",
+    "lumora-coprocessor",
+    "cosmwasm/contracts/privacy-pool",
+    "near/contracts/privacy-pool",
+    "relayer",
+    "runtime",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Soul-Research-Labs"
+
+[workspace.dependencies]
+# Substrate / FRAME
+frame-support = { version = "34.0.0", default-features = false }
+frame-system = { version = "34.0.0", default-features = false }
+frame-benchmarking = { version = "34.0.0", default-features = false, optional = true }
+sp-core = { version = "33.0.0", default-features = false }
+sp-runtime = { version = "37.0.0", default-features = false }
+sp-std = { version = "14.0.0", default-features = false }
+sp-io = { version = "36.0.0", default-features = false }
+parity-scale-codec = { version = "3.6", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11", default-features = false, features = ["derive"] }
+
+# XCM
+xcm = { version = "12.0.0", default-features = false }
+xcm-executor = { version = "12.0.0", default-features = false }
+
+# Cryptography (shared with Lumora)
+halo2_proofs = { version = "0.3.0", default-features = false }
+pasta_curves = { version = "0.5.1", default-features = false }
+group = { version = "0.13", default-features = false }
+ff = { version = "0.13", default-features = false }
+
+# Utilities
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+hex = { version = "0.4", default-features = false }

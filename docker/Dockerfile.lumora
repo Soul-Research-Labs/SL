@@ -1,0 +1,21 @@
+FROM rust:1.78-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock* ./
+COPY lumora-coprocessor/ lumora-coprocessor/
+
+RUN cargo build --release -p lumora-coprocessor
+
+# ── Runtime ─────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/lumora-coprocessor /usr/local/bin/lumora
+
+ENV RUST_LOG=info
+EXPOSE 8080
+
+ENTRYPOINT ["lumora"]

@@ -1,0 +1,47 @@
+[package]
+name = "lumora-coprocessor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Off-chain Lumora privacy coprocessor — proof generation and multi-chain submission"
+
+[[bin]]
+name = "lumora-coprocessor"
+path = "src/main.rs"
+
+[lib]
+name = "lumora_coprocessor"
+path = "src/lib.rs"
+
+[dependencies]
+# Lumora primitives (in production, these would be the actual lumora-* crates)
+# For now, we define compatible interfaces
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+clap = { version = "4", features = ["derive"] }
+
+# EVM submission
+ethers = { version = "2.0", features = ["abigen", "ws"] }
+
+# Halo2 proof system
+halo2_proofs = { version = "0.3", optional = true }
+
+# Substrate submission
+subxt = { version = "0.35", optional = true }
+
+# HTTP client for proof relay
+reqwest = { version = "0.12", features = ["json"] }
+
+[features]
+default = ["evm"]
+evm = []
+substrate = ["subxt"]
+halo2 = ["halo2_proofs"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util", "macros"] }

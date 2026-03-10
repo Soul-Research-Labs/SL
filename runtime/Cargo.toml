@@ -1,0 +1,45 @@
+[package]
+name = "soul-privacy-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Example Substrate runtime with Privacy Pool pallet integration"
+license = "MIT"
+
+[dependencies]
+parity-scale-codec = { version = "3.6", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11", default-features = false, features = ["derive"] }
+
+# Substrate
+frame-support = { version = "34.0.0", default-features = false }
+frame-system = { version = "34.0.0", default-features = false }
+frame-executive = { version = "34.0.0", default-features = false }
+pallet-balances = { version = "35.0.0", default-features = false }
+sp-api = { version = "32.0.0", default-features = false }
+sp-block-builder = { version = "32.0.0", default-features = false }
+sp-core = { version = "33.0.0", default-features = false }
+sp-inherents = { version = "32.0.0", default-features = false }
+sp-runtime = { version = "37.0.0", default-features = false }
+sp-std = { version = "14.0.0", default-features = false }
+sp-transaction-pool = { version = "32.0.0", default-features = false }
+
+# Privacy Pool
+pallet-privacy-pool = { path = "../pallets/privacy-pool", default-features = false }
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "frame-support/std",
+    "frame-system/std",
+    "frame-executive/std",
+    "pallet-balances/std",
+    "sp-api/std",
+    "sp-block-builder/std",
+    "sp-core/std",
+    "sp-inherents/std",
+    "sp-runtime/std",
+    "sp-std/std",
+    "sp-transaction-pool/std",
+    "pallet-privacy-pool/std",
+]

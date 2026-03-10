@@ -1,0 +1,24 @@
+{
+  "name": "@soul-privacy/multichain-stack",
+  "version": "0.1.0",
+  "description": "Multi-chain ZK privacy stack — ZAseon + Lumora for Polkadot, Avalanche, Cosmos, Near",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vvv",
+    "test:fuzz": "forge test --match-contract Fuzz -vvv",
+    "test:fork:avalanche": "forge test --fork-url $AVALANCHE_FUJI_RPC_URL -vvv",
+    "test:fork:moonbeam": "forge test --fork-url $MOONBASE_ALPHA_RPC_URL -vvv",
+    "deploy:avalanche:fuji": "forge script scripts/deploy/DeployAvalanche.s.sol --rpc-url $AVALANCHE_FUJI_RPC_URL --broadcast --verify",
+    "deploy:moonbeam:alpha": "forge script scripts/deploy/DeployMoonbeam.s.sol --rpc-url $MOONBASE_ALPHA_RPC_URL --broadcast --verify",
+    "deploy:astar:shibuya": "forge script scripts/deploy/DeployAstar.s.sol --rpc-url $ASTAR_SHIBUYA_RPC_URL --broadcast",
+    "sdk:build": "cd sdk && npm run build",
+    "sdk:test": "cd sdk && npm test",
+    "lint:sol": "solhint 'contracts/**/*.sol'",
+    "lint:ts": "cd sdk && npx eslint src/"
+  },
+  "devDependencies": {
+    "solhint": "^4.5.0"
+  },
+  "license": "MIT"
+}

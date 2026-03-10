@@ -1,0 +1,23 @@
+[package]
+name = "privacy-pool-near"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "NEAR privacy pool contract — ZK shielded transactions for Aurora/NEAR ecosystem"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+near-sdk = "5.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

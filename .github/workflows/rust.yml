@@ -1,0 +1,128 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "pallets/**"
+      - "lumora-coprocessor/**"
+      - "cosmwasm/**"
+      - "near/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    branches: [main]
+    paths:
+      - "pallets/**"
+      - "lumora-coprocessor/**"
+      - "cosmwasm/**"
+      - "near/**"
+
+jobs:
+  substrate-pallet:
+    name: Substrate Pallet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p pallet-privacy-pool
+
+      - name: Clippy
+        run: cargo clippy -p pallet-privacy-pool -- -D warnings
+
+      - name: Test
+        run: cargo test -p pallet-privacy-pool
+
+      - name: Build (no_std / wasm)
+        run: cargo build -p pallet-privacy-pool --no-default-features --target wasm32-unknown-unknown
+
+  lumora-coprocessor:
+    name: Lumora Coprocessor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p lumora-coprocessor
+
+      - name: Clippy
+        run: cargo clippy -p lumora-coprocessor -- -D warnings
+
+      - name: Test
+        run: cargo test -p lumora-coprocessor
+
+  cosmwasm:
+    name: CosmWasm Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p privacy-pool-cosmwasm
+
+      - name: Clippy
+        run: cargo clippy -p privacy-pool-cosmwasm -- -D warnings
+
+      - name: Test
+        run: cargo test -p privacy-pool-cosmwasm
+
+      - name: Build Wasm
+        run: |
+          RUSTFLAGS='-C link-arg=-s' cargo build \
+            -p privacy-pool-cosmwasm \
+            --release \
+            --target wasm32-unknown-unknown
+
+  near:
+    name: NEAR Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p privacy-pool-near
+
+      - name: Clippy
+        run: cargo clippy -p privacy-pool-near -- -D warnings
+
+      - name: Test
+        run: cargo test -p privacy-pool-near
+
+      - name: Build Wasm
+        run: |
+          RUSTFLAGS='-C link-arg=-s' cargo build \
+            -p privacy-pool-near \
+            --release \
+            --target wasm32-unknown-unknown

@@ -1,0 +1,44 @@
+name: SDK CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "sdk/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdk/**"
+
+jobs:
+  build-and-test:
+    name: SDK Build & Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: sdk
+        run: npm ci
+
+      - name: Lint
+        working-directory: sdk
+        run: npm run lint
+
+      - name: Build
+        working-directory: sdk
+        run: npm run build
+
+      - name: Test
+        working-directory: sdk
+        run: npm test

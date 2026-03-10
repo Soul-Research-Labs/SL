@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: "Soul Privacy Stack"
+    orgId: 1
+    folder: "Soul"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

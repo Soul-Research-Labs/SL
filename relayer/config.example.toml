@@ -1,0 +1,84 @@
+# Soul Privacy Relayer — Example Configuration
+# Copy to config.toml and edit for your deployment.
+
+metrics_port = 9090
+
+# ── Chain Watchers ──────────────────────────────────────────
+
+[[chains]]
+chain_id = 43113
+name = "Avalanche Fuji"
+ws_rpc_url = "wss://api.avax-test.network/ext/bc/C/ws"
+http_rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+epoch_manager_address = "0x0000000000000000000000000000000000000000"
+pool_address = "0x0000000000000000000000000000000000000000"
+bridge_adapter_address = "0x0000000000000000000000000000000000000000"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+poll_interval_secs = 6
+confirmation_blocks = 2
+
+[[chains]]
+chain_id = 1287
+name = "Moonbase Alpha"
+ws_rpc_url = "wss://wss.api.moonbase.moonbeam.network"
+http_rpc_url = "https://rpc.api.moonbase.moonbeam.network"
+epoch_manager_address = "0x0000000000000000000000000000000000000000"
+pool_address = "0x0000000000000000000000000000000000000000"
+bridge_adapter_address = "0x0000000000000000000000000000000000000000"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+poll_interval_secs = 12
+confirmation_blocks = 1
+
+[[chains]]
+chain_id = 81
+name = "Shibuya (Astar Testnet)"
+ws_rpc_url = "wss://rpc.shibuya.astar.network"
+http_rpc_url = "https://evm.shibuya.astar.network"
+epoch_manager_address = "0x0000000000000000000000000000000000000000"
+pool_address = "0x0000000000000000000000000000000000000000"
+bridge_adapter_address = "0x0000000000000000000000000000000000000000"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+poll_interval_secs = 12
+confirmation_blocks = 1
+
+[[chains]]
+chain_id = 9000
+name = "Evmos Testnet"
+ws_rpc_url = "wss://evmos-testnet-rpc.polkachu.com/websocket"
+http_rpc_url = "https://eth.bd.evmos.dev:8545"
+epoch_manager_address = "0x0000000000000000000000000000000000000000"
+pool_address = "0x0000000000000000000000000000000000000000"
+bridge_adapter_address = "0x0000000000000000000000000000000000000000"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+poll_interval_secs = 6
+confirmation_blocks = 3
+
+[[chains]]
+chain_id = 1313161555
+name = "Aurora Testnet"
+ws_rpc_url = "wss://testnet.aurora.dev"
+http_rpc_url = "https://testnet.aurora.dev"
+epoch_manager_address = "0x0000000000000000000000000000000000000000"
+pool_address = "0x0000000000000000000000000000000000000000"
+bridge_adapter_address = "0x0000000000000000000000000000000000000000"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+poll_interval_secs = 2
+confirmation_blocks = 5
+
+# ── Universal Nullifier Registry ────────────────────────────
+
+[registry]
+chain_id = 43113
+address = "0x0000000000000000000000000000000000000000"
+rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
+signer_key = "YOUR_PRIVATE_KEY_HEX"
+
+# ── Metadata Resistance ────────────────────────────────────
+
+[metadata_resistance]
+jitter_enabled = true
+max_jitter_ms = 5000
+batching_enabled = true
+batch_size = 10
+batch_timeout_secs = 30
+dummy_padding_enabled = false

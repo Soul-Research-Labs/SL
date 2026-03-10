@@ -1,0 +1,65 @@
+name: Deploy to Testnets
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Target network"
+        required: true
+        type: choice
+        options:
+          - avalanche-fuji
+          - moonbase-alpha
+          - astar-shibuya
+          - evmos-testnet
+          - aurora-testnet
+          - all-testnets
+
+env:
+  FOUNDRY_PROFILE: default
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.network }}
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        run: forge build
+
+      - name: Deploy to Avalanche Fuji
+        if: contains(github.event.inputs.network, 'avalanche-fuji') || github.event.inputs.network == 'all-testnets'
+        run: forge script scripts/deploy/DeployAvalanche.s.sol --rpc-url ${{ secrets.AVALANCHE_FUJI_RPC }} --broadcast --verify
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+
+      - name: Deploy to Moonbase Alpha
+        if: contains(github.event.inputs.network, 'moonbase-alpha') || github.event.inputs.network == 'all-testnets'
+        run: forge script scripts/deploy/DeployMoonbeam.s.sol --rpc-url ${{ secrets.MOONBASE_ALPHA_RPC }} --broadcast
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+
+      - name: Deploy to Astar Shibuya
+        if: contains(github.event.inputs.network, 'astar-shibuya') || github.event.inputs.network == 'all-testnets'
+        run: forge script scripts/deploy/DeployAstar.s.sol --rpc-url ${{ secrets.ASTAR_SHIBUYA_RPC }} --broadcast
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+
+      - name: Deploy to Evmos Testnet
+        if: contains(github.event.inputs.network, 'evmos-testnet') || github.event.inputs.network == 'all-testnets'
+        run: forge script scripts/deploy/DeployEvmos.s.sol --rpc-url ${{ secrets.EVMOS_TESTNET_RPC }} --broadcast
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+
+      - name: Deploy to Aurora Testnet
+        if: contains(github.event.inputs.network, 'aurora-testnet') || github.event.inputs.network == 'all-testnets'
+        run: forge script scripts/deploy/DeployAurora.s.sol --rpc-url ${{ secrets.AURORA_TESTNET_RPC }} --broadcast
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}

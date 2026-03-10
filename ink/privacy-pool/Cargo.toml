@@ -1,0 +1,27 @@
+[package]
+name = "ink-privacy-pool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ink = { version = "5.0", default-features = false }
+scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
+scale-info = { version = "2", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+ink_e2e = { version = "5.0" }
+
+[lib]
+name = "ink_privacy_pool"
+path = "lib.rs"
+crate-type = ["cdylib"]
+
+[features]
+default = ["std"]
+std = [
+    "ink/std",
+    "scale/std",
+    "scale-info/std",
+]
+ink-as-dependency = []
+e2e-tests = []

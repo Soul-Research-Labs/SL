@@ -1,0 +1,37 @@
+# Build artifacts
+out/
+cache/
+target/
+artifacts/
+typechain-types/
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Foundry
+broadcast/
+cache_forge/
+
+# Rust
+Cargo.lock
+*.pdb
+
+# Near
+neardev/
+
+# Coverage
+lcov.info
+coverage/
+
+# Deployment artifacts (keep committed ones)
+!deployments/**/*.json

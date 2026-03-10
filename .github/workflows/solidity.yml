@@ -1,0 +1,71 @@
+name: Solidity CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "contracts/**"
+      - "foundry.toml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "contracts/**"
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build-and-test:
+    name: Foundry Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Run tests
+        run: forge test -vvv
+
+      - name: Run snapshot (gas)
+        run: forge snapshot
+
+      - name: Check formatting
+        run: forge fmt --check
+
+  slither:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts/
+          fail-on: medium
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run coverage
+        run: forge coverage --report lcov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          flags: solidity

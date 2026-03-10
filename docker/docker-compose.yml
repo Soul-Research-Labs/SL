@@ -1,0 +1,65 @@
+services:
+  # ── Relayer (cross-chain epoch relay daemon) ──
+  relayer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.relayer
+    container_name: soul-relayer
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      RUST_LOG: "relayer=debug,info"
+    volumes:
+      - ../relayer/config.example.toml:/etc/relayer/config.toml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  # ── Lumora Coprocessor (ZK proof generation) ──
+  lumora:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.lumora
+    container_name: soul-lumora
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "lumora=debug,info"
+    ports:
+      - "8080:8080"
+
+  # ── Prometheus (metrics collection) ──
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: soul-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9191:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+
+  # ── Grafana (dashboards) ──
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: soul-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:
