@@ -1,4 +1,8 @@
-import { ProofClient, type ProofResult, type CoprocessorHealth } from "../prover";
+import {
+  ProofClient,
+  type ProofResult,
+  type CoprocessorHealth,
+} from "../prover";
 
 // ── Mock fetch ─────────────────────────────────────────
 
@@ -16,7 +20,7 @@ const HEALTH_RESPONSE: CoprocessorHealth = {
 
 const PROOF_RESPONSE: Omit<ProofResult, "provingTimeMs"> = {
   success: true,
-  proof: "0x" + "ab".repeat(192) as `0x${string}`,
+  proof: ("0x" + "ab".repeat(192)) as `0x${string}`,
   publicInputs: ["0x01", "0x02"] as `0x${string}`[],
   provingSystem: "halo2-ipa+groth16",
 };
@@ -72,7 +76,9 @@ describe("ProofClient", () => {
       mockFetch.mockResolvedValueOnce(
         mockJsonResponse({ error: "internal" }, 500),
       );
-      await expect(client.health()).rejects.toThrow("Coprocessor request failed (500)");
+      await expect(client.health()).rejects.toThrow(
+        "Coprocessor request failed (500)",
+      );
     });
   });
 
@@ -140,7 +146,8 @@ describe("ProofClient", () => {
         merklePaths: [["0x10"], ["0x20"]] as [`0x${string}`[], `0x${string}`[]],
         pathIndices: [[0], [1]],
         spendingKey: "0x07" as `0x${string}`,
-        recipient: "0x0000000000000000000000000000000000000001" as `0x${string}`,
+        recipient:
+          "0x0000000000000000000000000000000000000001" as `0x${string}`,
         exitValue: 1000000000000000000n,
         chainId: 43113n,
         appId: 1n,

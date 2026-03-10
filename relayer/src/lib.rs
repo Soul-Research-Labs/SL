@@ -42,8 +42,10 @@
 //! └──────────────────────────────────────────────────────┘
 //! ```
 
+pub mod adapters;
 pub mod aggregator;
 pub mod config;
+pub mod core;
 pub mod dispatcher;
 pub mod health;
 pub mod metrics;

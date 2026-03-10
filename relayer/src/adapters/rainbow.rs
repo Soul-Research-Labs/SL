@@ -1,0 +1,147 @@
+//! Rainbow Bridge adapter for NEAR ↔ Aurora epoch root relay.
+//!
+//! Uses the Rainbow Bridge light client to submit epoch roots
+//! from Aurora's EVM side to a NEAR-side gateway contract.
+
+use async_trait::async_trait;
+use super::{AdapterError, BridgeAdapter, EpochRootMessage};
+use crate::config::ChainWatchConfig;
+
+const AURORA_MAINNET: u64 = 1313161554;
+const AURORA_TESTNET: u64 = 1313161555;
+
+pub struct RainbowAdapter;
+
+impl RainbowAdapter {
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn is_aurora(chain_id: u64) -> bool {
+        chain_id == AURORA_MAINNET || chain_id == AURORA_TESTNET
+    }
+}
+
+#[async_trait]
+impl BridgeAdapter for RainbowAdapter {
+    fn protocol_name(&self) -> &str {
+        "Rainbow Bridge"
+    }
+
+    fn supports_chain(&self, chain_id: u64) -> bool {
+        Self::is_aurora(chain_id)
+    }
+
+    async fn send_epoch_root(
+        &self,
+        target_chain: &ChainWatchConfig,
+        message: &EpochRootMessage,
+    ) -> Result<String, AdapterError> {
+        if !self.supports_chain(target_chain.chain_id) {
+            return Err(AdapterError::UnsupportedChain(target_chain.chain_id));
+        }
+
+        let bridge_addr = target_chain
+            .bridge_adapter_address
+            .as_deref()
+            .ok_or_else(|| {
+                AdapterError::Bridge("no Rainbow Bridge connector address configured".into())
+            })?;
+
+        let calldata = encode_rainbow_send(
+            message.source_chain_id,
+            message.epoch_id,
+            &message.nullifier_root,
+        );
+
+        tracing::info!(
+            protocol = "Rainbow",
+            target_chain = target_chain.chain_id,
+            epoch_id = message.epoch_id,
+            "sending epoch root via Rainbow Bridge"
+        );
+
+        let tx_hash = send_rainbow_transaction(
+            &target_chain.http_rpc_url,
+            &target_chain.signer_key,
+            bridge_addr,
+            &calldata,
+        )
+        .await?;
+
+        Ok(tx_hash)
+    }
+
+    async fn estimate_fee(
+        &self,
+        _target_chain: &ChainWatchConfig,
+    ) -> Result<u128, AdapterError> {
+        // Rainbow Bridge challenge period is covered by relayer bonds;
+        // the submitter only pays Aurora gas + NEAR storage deposit (~0.01 NEAR)
+        Ok(10_000_000_000_000_000) // 0.01 × 10^18
+    }
+}
+
+/// ABI-encode `sendToNear(uint256,uint256,bytes32)` for the Aurora connector.
+fn encode_rainbow_send(
+    source_chain_id: u64,
+    epoch_id: u64,
+    nullifier_root: &[u8; 32],
+) -> Vec<u8> {
+    let selector: [u8; 4] = [0xd2, 0x04, 0xc3, 0x8a]; // placeholder
+
+    let mut data = Vec::with_capacity(4 + 96);
+    data.extend_from_slice(&selector);
+
+    let mut buf = [0u8; 32];
+    buf[24..].copy_from_slice(&source_chain_id.to_be_bytes());
+    data.extend_from_slice(&buf);
+
+    let mut buf = [0u8; 32];
+    buf[24..].copy_from_slice(&epoch_id.to_be_bytes());
+    data.extend_from_slice(&buf);
+
+    data.extend_from_slice(nullifier_root);
+
+    data
+}
+
+/// Submit an EVM transaction to the Rainbow Bridge connector on Aurora.
+async fn send_rainbow_transaction(
+    rpc_url: &str,
+    signer_key: &str,
+    to: &str,
+    calldata: &[u8],
+) -> Result<String, AdapterError> {
+    use ethers::prelude::*;
+
+    let provider = Provider::<Http>::try_from(rpc_url)
+        .map_err(|e| AdapterError::Rpc(e.to_string()))?;
+
+    let wallet: LocalWallet = signer_key
+        .parse()
+        .map_err(|e: WalletError| AdapterError::Signing(e.to_string()))?;
+
+    let client = SignerMiddleware::new(provider, wallet);
+
+    let to_addr: Address = to
+        .parse()
+        .map_err(|_| AdapterError::Bridge(format!("invalid address: {}", to)))?;
+
+    let tx = TransactionRequest::new()
+        .to(to_addr)
+        .data(calldata.to_vec())
+        .gas(350_000u64);
+
+    let pending = client
+        .send_transaction(tx, None)
+        .await
+        .map_err(|e| AdapterError::Rpc(e.to_string()))?;
+
+    let receipt = pending
+        .await
+        .map_err(|e| AdapterError::Rpc(e.to_string()))?
+        .ok_or_else(|| AdapterError::Rpc("no receipt".into()))?;
+
+    Ok(format!("{:?}", receipt.transaction_hash))
+}
