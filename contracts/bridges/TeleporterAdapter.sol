@@ -20,14 +20,14 @@ struct TeleporterFeeInfo {
 
 /// @notice Teleporter messenger interface (deployed by Avalanche on each subnet)
 interface ITeleporterMessenger {
-    function sendCrossChainMessage(TeleporterMessageInput calldata messageInput)
-        external
-        returns (bytes32 messageID);
+    function sendCrossChainMessage(
+        TeleporterMessageInput calldata messageInput
+    ) external returns (bytes32 messageID);
 
-    function getMessageHash(bytes32 sourceBlockchainID, uint256 messageNonce)
-        external
-        view
-        returns (bytes32);
+    function getMessageHash(
+        bytes32 sourceBlockchainID,
+        uint256 messageNonce
+    ) external view returns (bytes32);
 }
 
 /// @notice Teleporter receiver interface
@@ -45,7 +45,6 @@ interface ITeleporterReceiver {
 ///         receipt tracking built on top of raw AWM.
 /// @dev See: https://github.com/ava-labs/teleporter
 contract TeleporterAdapter is IBridgeAdapter {
-
     // ── State ──────────────────────────────────────────────────────────
 
     ITeleporterMessenger public immutable teleporterMessenger;
@@ -80,7 +79,8 @@ contract TeleporterAdapter is IBridgeAdapter {
     }
 
     modifier onlyTeleporter() {
-        if (!authorizedMessengers[msg.sender]) revert InvalidTeleporterMessenger();
+        if (!authorizedMessengers[msg.sender])
+            revert InvalidTeleporterMessenger();
         _;
     }
 
@@ -103,7 +103,8 @@ contract TeleporterAdapter is IBridgeAdapter {
         uint256 gasLimit
     ) external payable returns (bytes32 messageId) {
         bytes32 destBlockchainID = chainToBlockchainID[destinationChainId];
-        if (destBlockchainID == bytes32(0)) revert UnsupportedChain(destinationChainId);
+        if (destBlockchainID == bytes32(0))
+            revert UnsupportedChain(destinationChainId);
 
         // Build Teleporter message
         TeleporterMessageInput memory input = TeleporterMessageInput({
@@ -129,14 +130,12 @@ contract TeleporterAdapter is IBridgeAdapter {
         address sender,
         bytes calldata payload
     ) external onlyTeleporter {
-        bytes32 messageId = keccak256(abi.encodePacked(
-            sourceChainId,
-            sender,
-            block.number,
-            payload
-        ));
+        bytes32 messageId = keccak256(
+            abi.encodePacked(sourceChainId, sender, block.number, payload)
+        );
 
-        if (processedMessages[messageId]) revert MessageAlreadyProcessed(messageId);
+        if (processedMessages[messageId])
+            revert MessageAlreadyProcessed(messageId);
         processedMessages[messageId] = true;
 
         emit MessageReceived(sourceChainId, messageId, sender, payload);
@@ -149,19 +148,25 @@ contract TeleporterAdapter is IBridgeAdapter {
         address originSenderAddress,
         bytes calldata message
     ) external onlyTeleporter {
-        (address originalSender, bytes memory payload) = abi.decode(message, (address, bytes));
+        (address originalSender, bytes memory payload) = abi.decode(
+            message,
+            (address, bytes)
+        );
 
         // Find the chain ID for this blockchain ID
         // In production, maintain a reverse mapping; here we pass 0 and let the
         // event consumer resolve it
-        bytes32 messageId = keccak256(abi.encodePacked(
-            _sourceBlockchainID,
-            originSenderAddress,
-            block.number,
-            payload
-        ));
+        bytes32 messageId = keccak256(
+            abi.encodePacked(
+                _sourceBlockchainID,
+                originSenderAddress,
+                block.number,
+                payload
+            )
+        );
 
-        if (processedMessages[messageId]) revert MessageAlreadyProcessed(messageId);
+        if (processedMessages[messageId])
+            revert MessageAlreadyProcessed(messageId);
         processedMessages[messageId] = true;
 
         emit MessageReceived(0, messageId, originalSender, payload);
@@ -169,8 +174,8 @@ contract TeleporterAdapter is IBridgeAdapter {
 
     /// @inheritdoc IBridgeAdapter
     function estimateFee(
-        uint256, /* destinationChainId */
-        bytes calldata, /* payload */
+        uint256 /* destinationChainId */,
+        bytes calldata /* payload */,
         uint256 /* gasLimit */
     ) external pure returns (uint256 fee) {
         // Teleporter fee is the relayer incentive — currently 0 for permissionless relay

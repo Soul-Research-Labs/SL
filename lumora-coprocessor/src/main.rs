@@ -11,7 +11,9 @@
 
 use clap::{Parser, Subcommand};
 use lumora_coprocessor::types::*;
+use lumora_coprocessor::proof::ProofGenerator;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -91,26 +93,34 @@ async fn main() {
         } => {
             info!(port, %bind, workers, "Starting Lumora coprocessor HTTP service");
 
-            // In production, this spawns an HTTP server (e.g. axum/warp) with:
-            //   POST /prove/transfer  → generate transfer proof
-            //   POST /prove/withdraw  → generate withdraw proof
-            //   POST /prove/deposit   → generate deposit proof
-            //   GET  /health          → readiness check
-            //   GET  /metrics         → Prometheus metrics
-            //
-            // Each request is dispatched to a worker pool that runs the
-            // Halo2 prover, wraps the result in a Groth16 SNARK envelope,
-            // and returns the serialized proof + public inputs.
+            // Initialize proof generator with empty proving keys.
+            // In production, load from SRS ceremony artifacts on disk.
+            let generator = Arc::new(ProofGenerator::new(
+                vec![1u8; 32], // placeholder transfer PK
+                vec![1u8; 32], // placeholder withdraw PK
+                Some(vec![1u8; 32]), // placeholder SNARK wrapper PK
+            ));
 
-            info!("Coprocessor service would listen on {}:{}", bind, port);
-            info!("Proof worker pool size: {}", workers);
+            let app = build_router(generator);
 
-            // Placeholder: keep alive
-            info!("Coprocessor ready — awaiting proof requests");
-            tokio::signal::ctrl_c()
+            let addr = format!("{}:{}", bind, port);
+            let listener = tokio::net::TcpListener::bind(&addr)
                 .await
-                .expect("Failed to listen for Ctrl+C");
-            info!("Shutting down coprocessor");
+                .expect("Failed to bind address");
+
+            info!("Coprocessor listening on {}", addr);
+            info!("Proof worker pool size: {}", workers);
+            info!("Routes: POST /prove/transfer, POST /prove/withdraw, GET /health");
+
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    tokio::signal::ctrl_c()
+                        .await
+                        .expect("Failed to listen for Ctrl+C");
+                    info!("Shutting down coprocessor");
+                })
+                .await
+                .expect("Server error");
         }
 
         Commands::Prove { input, output } => {
@@ -124,8 +134,7 @@ async fn main() {
                 }
             };
 
-            // Parse and validate the proof request
-            let _request: serde_json::Value = match serde_json::from_str(&request_str) {
+            let request: serde_json::Value = match serde_json::from_str(&request_str) {
                 Ok(v) => v,
                 Err(e) => {
                     error!("Invalid JSON in proof request: {}", e);
@@ -133,23 +142,69 @@ async fn main() {
                 }
             };
 
-            // In production:
-            // 1. Parse into a typed ProofRequest
-            // 2. Validate all inputs against the circuit constraints
-            // 3. Instantiate the appropriate Halo2 circuit
-            // 4. Run the prover
-            // 5. Wrap in Groth16 SNARK envelope for EVM verification
-            // 6. Serialize proof + public inputs
+            let generator = ProofGenerator::new(
+                vec![1u8; 32],
+                vec![1u8; 32],
+                Some(vec![1u8; 32]),
+            );
 
-            info!("Proof generation complete → {:?}", output);
+            let proof_type = request
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("transfer");
 
-            let proof_output = serde_json::json!({
-                "status": "success",
-                "proof": "0x...placeholder...",
-                "publicInputs": [],
-                "provingSystem": "halo2-groth16-wrapper",
-                "circuitVersion": "0.1.0"
-            });
+            let proof_output = match proof_type {
+                "transfer" => {
+                    match serde_json::from_value::<TransferRequest>(request.clone()) {
+                        Ok(req) => match generator.generate_transfer(&req) {
+                            Ok(proof) => serde_json::json!({
+                                "status": "success",
+                                "proof": hex::encode(&proof.raw_proof),
+                                "snarkWrapper": proof.snark_wrapper.map(hex::encode),
+                                "publicInputs": proof.public_inputs.iter()
+                                    .map(hex::encode).collect::<Vec<_>>(),
+                                "provingSystem": "halo2-groth16-wrapper",
+                                "circuitVersion": "0.1.0"
+                            }),
+                            Err(e) => {
+                                error!("Proof generation failed: {}", e);
+                                std::process::exit(1);
+                            }
+                        },
+                        Err(e) => {
+                            error!("Invalid transfer request: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                "withdraw" => {
+                    match serde_json::from_value::<WithdrawRequest>(request.clone()) {
+                        Ok(req) => match generator.generate_withdraw(&req) {
+                            Ok(proof) => serde_json::json!({
+                                "status": "success",
+                                "proof": hex::encode(&proof.raw_proof),
+                                "snarkWrapper": proof.snark_wrapper.map(hex::encode),
+                                "publicInputs": proof.public_inputs.iter()
+                                    .map(hex::encode).collect::<Vec<_>>(),
+                                "provingSystem": "halo2-groth16-wrapper",
+                                "circuitVersion": "0.1.0"
+                            }),
+                            Err(e) => {
+                                error!("Proof generation failed: {}", e);
+                                std::process::exit(1);
+                            }
+                        },
+                        Err(e) => {
+                            error!("Invalid withdraw request: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                other => {
+                    error!("Unknown proof type: {}", other);
+                    std::process::exit(1);
+                }
+            };
 
             if let Err(e) =
                 std::fs::write(&output, serde_json::to_string_pretty(&proof_output).unwrap())
@@ -163,14 +218,89 @@ async fn main() {
 
         Commands::Health => {
             info!("Checking coprocessor health...");
-
-            // Verify the proving backend is available
-            // In production: attempt to create a dummy proof to validate
-            // that the circuit parameters and SRS are loaded correctly.
             println!("status: ok");
             println!("prover: halo2");
             println!("snark_wrapper: groth16");
             println!("circuit_version: 0.1.0");
         }
     }
+}
+
+// ── HTTP Router and Handlers ───────────────────────────────────────────────
+
+fn build_router(generator: Arc<ProofGenerator>) -> axum::Router {
+    use axum::{routing::{get, post}, Router};
+
+    Router::new()
+        .route("/health", get(handle_health))
+        .route("/prove/transfer", post(handle_prove_transfer))
+        .route("/prove/withdraw", post(handle_prove_withdraw))
+        .with_state(generator)
+}
+
+async fn handle_health() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "prover": "halo2",
+        "snarkWrapper": "groth16",
+        "circuitVersion": "0.1.0"
+    }))
+}
+
+async fn handle_prove_transfer(
+    axum::extract::State(generator): axum::extract::State<Arc<ProofGenerator>>,
+    axum::Json(request): axum::Json<TransferRequest>,
+) -> axum::response::Result<axum::Json<serde_json::Value>> {
+    let result = tokio::task::spawn_blocking(move || generator.generate_transfer(&request))
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Worker panic: {}", e),
+            )
+        })?
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Proof generation failed: {}", e),
+            )
+        })?;
+
+    Ok(axum::Json(serde_json::json!({
+        "status": "success",
+        "proof": hex::encode(&result.raw_proof),
+        "snarkWrapper": result.snark_wrapper.map(hex::encode),
+        "publicInputs": result.public_inputs.iter().map(hex::encode).collect::<Vec<_>>(),
+        "provingSystem": "halo2-groth16-wrapper",
+        "circuitVersion": "0.1.0"
+    })))
+}
+
+async fn handle_prove_withdraw(
+    axum::extract::State(generator): axum::extract::State<Arc<ProofGenerator>>,
+    axum::Json(request): axum::Json<WithdrawRequest>,
+) -> axum::response::Result<axum::Json<serde_json::Value>> {
+    let result = tokio::task::spawn_blocking(move || generator.generate_withdraw(&request))
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Worker panic: {}", e),
+            )
+        })?
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Proof generation failed: {}", e),
+            )
+        })?;
+
+    Ok(axum::Json(serde_json::json!({
+        "status": "success",
+        "proof": hex::encode(&result.raw_proof),
+        "snarkWrapper": result.snark_wrapper.map(hex::encode),
+        "publicInputs": result.public_inputs.iter().map(hex::encode).collect::<Vec<_>>(),
+        "provingSystem": "halo2-groth16-wrapper",
+        "circuitVersion": "0.1.0"
+    })))
 }

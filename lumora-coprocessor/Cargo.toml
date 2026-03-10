@@ -34,6 +34,10 @@ halo2_proofs = { version = "0.3", optional = true }
 # Substrate submission
 subxt = { version = "0.35", optional = true }
 
+# HTTP server
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
 # HTTP client for proof relay
 reqwest = { version = "0.12", features = ["json"] }
 
