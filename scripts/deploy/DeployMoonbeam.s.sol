@@ -42,8 +42,8 @@ contract DeployMoonbeam is Script {
 
         vm.startBroadcast(deployerKey);
 
-        // 1. Placeholder verifier
-        address verifier = _deployPlaceholderVerifier();
+        // 1. Deploy or use pre-deployed verifier
+        address verifier = _resolveVerifier();
         console.log("Verifier:", verifier);
 
         // 2. Deploy EpochManager
@@ -81,6 +81,21 @@ contract DeployMoonbeam is Script {
         console.log("XcmAdapter:     ", address(xcmAdapter));
         console.log("ParaId:         ", thisParaId);
         console.log("Domain Chain ID:", block.chainid);
+    }
+
+    /// @dev Resolve the verifier address: use VERIFIER_ADDRESS env var if set,
+    ///      otherwise deploy placeholder. Reverts on mainnet if no real verifier provided.
+    function _resolveVerifier() internal returns (address) {
+        try vm.envAddress("VERIFIER_ADDRESS") returns (address addr) {
+            require(addr != address(0), "VERIFIER_ADDRESS cannot be zero");
+            return addr;
+        } catch {
+            require(
+                block.chainid != 1284, // Moonbeam mainnet
+                "MAINNET DEPLOY BLOCKED: Set VERIFIER_ADDRESS to a real ZK verifier. Placeholder verifiers are forbidden on mainnet."
+            );
+            return _deployPlaceholderVerifier();
+        }
     }
 
     function _deployPlaceholderVerifier() internal returns (address) {

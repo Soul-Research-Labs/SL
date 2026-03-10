@@ -38,8 +38,8 @@ contract DeployAvalanche is Script {
 
         vm.startBroadcast(deployerKey);
 
-        // 1. Deploy a placeholder verifier (replace with real UltraHonk/Halo2 verifier)
-        address verifier = _deployPlaceholderVerifier();
+        // 1. Deploy or use pre-deployed verifier
+        address verifier = _resolveVerifier();
         console.log("Verifier deployed:", verifier);
 
         // 2. Deploy EpochManager
@@ -89,6 +89,23 @@ contract DeployAvalanche is Script {
         console.log("TeleporterAdapter: ", address(teleporterAdapter));
         console.log("Domain Chain ID:   ", DOMAIN_CHAIN_ID);
         console.log("Domain App ID:     ", DOMAIN_APP_ID);
+    }
+
+    /// @dev Resolve the verifier address: use VERIFIER_ADDRESS env var if set,
+    ///      otherwise deploy placeholder. Reverts on mainnet if no real verifier provided.
+    function _resolveVerifier() internal returns (address) {
+        // Check for pre-deployed verifier address
+        try vm.envAddress("VERIFIER_ADDRESS") returns (address addr) {
+            require(addr != address(0), "VERIFIER_ADDRESS cannot be zero");
+            return addr;
+        } catch {
+            // No verifier env var — check we're not on mainnet
+            require(
+                block.chainid != 43114, // Avalanche mainnet
+                "MAINNET DEPLOY BLOCKED: Set VERIFIER_ADDRESS to a real ZK verifier. Placeholder verifiers are forbidden on mainnet."
+            );
+            return _deployPlaceholderVerifier();
+        }
     }
 
     /// @dev Placeholder verifier — returns true for all proofs.

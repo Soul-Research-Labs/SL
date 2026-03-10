@@ -57,21 +57,8 @@ interface IComplianceCheck {
 
 /// @title VerifyDeployment — Post-deploy health checks for all contracts
 /// @notice Run after deployment to validate all contracts are correctly configured.
-///         Usage: forge script scripts/VerifyDeployment.s.sol --rpc-url $RPC_URL
+///         Usage: POOL=0x... EPOCH_MANAGER=0x... forge script scripts/VerifyDeployment.s.sol --rpc-url $RPC_URL
 contract VerifyDeployment is Script {
-    // ── Set these before running ───────────────────────
-
-    address constant POOL = address(0); // Replace with deployed address
-    address constant EPOCH_MANAGER = address(0);
-    address constant TIMELOCK = address(0);
-    address constant VERIFIER = address(0);
-    address constant COMPLIANCE = address(0);
-    address constant EXPECTED_GOVERNANCE = address(0);
-    address constant EXPECTED_GUARDIAN = address(0);
-    uint256 constant EXPECTED_CHAIN_ID = 43114;
-    uint256 constant EXPECTED_APP_ID = 1;
-    uint256 constant EXPECTED_DELAY = 2 days;
-
     uint256 checks;
     uint256 passed;
     uint256 failed;
@@ -80,13 +67,26 @@ contract VerifyDeployment is Script {
         console2.log("=== Soul Privacy Stack — Post-Deploy Verification ===");
         console2.log("");
 
-        if (POOL != address(0)) _verifyPool();
-        if (EPOCH_MANAGER != address(0)) _verifyEpochManager();
-        if (TIMELOCK != address(0)) _verifyTimelock();
-        if (VERIFIER != address(0)) _verifyVerifier();
-        if (COMPLIANCE != address(0)) _verifyCompliance();
+        address pool = _envAddressOr("POOL", address(0));
+        address epochManager = _envAddressOr("EPOCH_MANAGER", address(0));
+        address timelock = _envAddressOr("TIMELOCK", address(0));
+        address verifier = _envAddressOr("VERIFIER", address(0));
+        address compliance = _envAddressOr("COMPLIANCE", address(0));
+        address expectedGovernance = _envAddressOr("EXPECTED_GOVERNANCE", address(0));
+        address expectedGuardian = _envAddressOr("EXPECTED_GUARDIAN", address(0));
+        uint256 expectedChainId = _envUintOr("EXPECTED_CHAIN_ID", block.chainid);
+        uint256 expectedAppId = _envUintOr("EXPECTED_APP_ID", 1);
+        uint256 expectedDelay = _envUintOr("EXPECTED_DELAY", 2 days);
 
-        _verifyCrossLinks();
+        if (pool != address(0)) _verifyPool(pool, verifier, epochManager, expectedChainId, expectedAppId);
+        if (epochManager != address(0)) _verifyEpochManager(epochManager, pool);
+        if (timelock != address(0)) _verifyTimelock(timelock, expectedDelay);
+        if (verifier != address(0)) _verifyVerifier(verifier);
+        if (compliance != address(0)) _verifyCompliance(compliance);
+
+        if (pool != address(0) && timelock != address(0)) {
+            _verifyCrossLinks(pool, timelock);
+        }
 
         console2.log("");
         console2.log("=== Results ===");
@@ -103,26 +103,51 @@ contract VerifyDeployment is Script {
         }
     }
 
+    // ── Env helpers ────────────────────────────────────
+
+    function _envAddressOr(string memory key, address fallback_) internal view returns (address) {
+        try vm.envAddress(key) returns (address val) {
+            return val;
+        } catch {
+            return fallback_;
+        }
+    }
+
+    function _envUintOr(string memory key, uint256 fallback_) internal view returns (uint256) {
+        try vm.envUint(key) returns (uint256 val) {
+            return val;
+        } catch {
+            return fallback_;
+        }
+    }
+
     // ── Pool Checks ────────────────────────────────────
 
-    function _verifyPool() internal {
+    function _verifyPool(
+        address poolAddr,
+        address verifier,
+        address epochManager,
+        uint256 expectedChainId,
+        uint256 expectedAppId
+    ) internal {
         console2.log("--- PrivacyPool ---");
-        IPoolVerify pool = IPoolVerify(POOL);
+        IPoolVerify pool = IPoolVerify(poolAddr);
 
         _check("Pool: verifier set", pool.verifier() != address(0));
-        _check("Pool: verifier matches", pool.verifier() == VERIFIER);
+        if (verifier != address(0)) {
+            _check("Pool: verifier matches", pool.verifier() == verifier);
+        }
         _check("Pool: epochManager set", pool.epochManager() != address(0));
-        _check(
-            "Pool: epochManager matches",
-            pool.epochManager() == EPOCH_MANAGER
-        );
+        if (epochManager != address(0)) {
+            _check("Pool: epochManager matches", pool.epochManager() == epochManager);
+        }
         _check(
             "Pool: domainChainId correct",
-            pool.domainChainId() == EXPECTED_CHAIN_ID
+            pool.domainChainId() == expectedChainId
         );
         _check(
             "Pool: domainAppId correct",
-            pool.domainAppId() == EXPECTED_APP_ID
+            pool.domainAppId() == expectedAppId
         );
         _check("Pool: governance set", pool.governance() != address(0));
         _check("Pool: not paused", !pool.paused());
@@ -134,9 +159,7 @@ contract VerifyDeployment is Script {
         _check("Pool: leaf index = 0", pool.getNextLeafIndex() == 0);
         _check("Pool: balance = 0", pool.poolBalance() == 0);
 
-        // Code size check
         uint256 codeSize;
-        address poolAddr = POOL;
         assembly {
             codeSize := extcodesize(poolAddr)
         }
@@ -145,27 +168,29 @@ contract VerifyDeployment is Script {
 
     // ── Epoch Manager Checks ───────────────────────────
 
-    function _verifyEpochManager() internal {
+    function _verifyEpochManager(address epochManagerAddr, address pool) internal {
         console2.log("--- EpochManager ---");
-        IEpochVerify em = IEpochVerify(EPOCH_MANAGER);
+        IEpochVerify em = IEpochVerify(epochManagerAddr);
 
-        _check("Epoch: pool authorized", em.authorizedPools(POOL));
+        if (pool != address(0)) {
+            _check("Epoch: pool authorized", em.authorizedPools(pool));
+        }
         _check("Epoch: initial epoch = 0", em.currentEpochId() == 0);
         _check("Epoch: duration > 0", em.epochDuration() > 0);
     }
 
     // ── Timelock Checks ────────────────────────────────
 
-    function _verifyTimelock() internal {
+    function _verifyTimelock(address timelockAddr, uint256 expectedDelay) internal {
         console2.log("--- GovernanceTimelock ---");
-        ITimelockVerify tl = ITimelockVerify(TIMELOCK);
+        ITimelockVerify tl = ITimelockVerify(timelockAddr);
 
         _check("Timelock: admin set", tl.admin() != address(0));
         _check("Timelock: delay >= MINIMUM", tl.delay() >= tl.MINIMUM_DELAY());
         _check("Timelock: delay <= MAXIMUM", tl.delay() <= tl.MAXIMUM_DELAY());
         _check(
             "Timelock: delay matches expected",
-            tl.delay() == EXPECTED_DELAY
+            tl.delay() == expectedDelay
         );
         _check(
             "Timelock: grace period = 14 days",
@@ -175,27 +200,26 @@ contract VerifyDeployment is Script {
 
     // ── Verifier Checks ────────────────────────────────
 
-    function _verifyVerifier() internal {
+    function _verifyVerifier(address verifierAddr) internal {
         console2.log("--- ProofVerifier ---");
-        IVerifierCheck v = IVerifierCheck(VERIFIER);
+        IVerifierCheck v = IVerifierCheck(verifierAddr);
 
         string memory ps = v.provingSystem();
         bytes memory psBytes = bytes(ps);
         _check("Verifier: provingSystem not empty", psBytes.length > 0);
 
         uint256 codeSize;
-        address vAddr = VERIFIER;
         assembly {
-            codeSize := extcodesize(vAddr)
+            codeSize := extcodesize(verifierAddr)
         }
         _check("Verifier: has code", codeSize > 0);
     }
 
     // ── Compliance Checks ──────────────────────────────
 
-    function _verifyCompliance() internal {
+    function _verifyCompliance(address complianceAddr) internal {
         console2.log("--- ComplianceOracle ---");
-        IComplianceCheck c = IComplianceCheck(COMPLIANCE);
+        IComplianceCheck c = IComplianceCheck(complianceAddr);
 
         _check("Compliance: governance set", c.governance() != address(0));
         _check("Compliance: policy version >= 1", c.policyVersion() >= 1);
@@ -203,18 +227,15 @@ contract VerifyDeployment is Script {
 
     // ── Cross-link Checks ──────────────────────────────
 
-    function _verifyCrossLinks() internal {
-        if (POOL == address(0) || TIMELOCK == address(0)) return;
-
+    function _verifyCrossLinks(address poolAddr, address timelockAddr) internal {
         console2.log("--- Cross-Links ---");
 
-        // If governance is the timelock, verify the chain
-        IPoolVerify pool = IPoolVerify(POOL);
-        if (pool.governance() == TIMELOCK) {
-            ITimelockVerify tl = ITimelockVerify(TIMELOCK);
+        IPoolVerify pool = IPoolVerify(poolAddr);
+        if (pool.governance() == timelockAddr) {
+            ITimelockVerify tl = ITimelockVerify(timelockAddr);
             _check(
-                "CrossLink: pool.governance → timelock",
-                pool.governance() == TIMELOCK
+                "CrossLink: pool.governance = timelock",
+                pool.governance() == timelockAddr
             );
             _check("CrossLink: timelock admin set", tl.admin() != address(0));
         }

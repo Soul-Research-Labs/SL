@@ -55,7 +55,11 @@ contract UltraHonkVerifier is IProofVerifier {
 
     error Unauthorized();
     error VKNotInitialized();
+    error VKAlreadyInitialized();
     error InvalidProof();
+    error InvalidProofLength();
+    error PublicInputCountMismatch();
+    error PointNotOnCurve();
 
     modifier onlyGovernance() {
         if (msg.sender != governance) revert Unauthorized();
@@ -105,6 +109,7 @@ contract UltraHonkVerifier is IProofVerifier {
     function setTransferVK(
         HonkVerificationKey calldata vk
     ) external onlyGovernance {
+        if (transferVK.initialized) revert VKAlreadyInitialized();
         transferVK = vk;
         transferVK.initialized = true;
     }
@@ -112,6 +117,7 @@ contract UltraHonkVerifier is IProofVerifier {
     function setWithdrawVK(
         HonkVerificationKey calldata vk
     ) external onlyGovernance {
+        if (withdrawVK.initialized) revert VKAlreadyInitialized();
         withdrawVK = vk;
         withdrawVK.initialized = true;
     }
@@ -119,6 +125,7 @@ contract UltraHonkVerifier is IProofVerifier {
     function setAggregationVK(
         HonkVerificationKey calldata vk
     ) external onlyGovernance {
+        if (aggregationVK.initialized) revert VKAlreadyInitialized();
         aggregationVK = vk;
         aggregationVK.initialized = true;
     }
@@ -127,46 +134,81 @@ contract UltraHonkVerifier is IProofVerifier {
         governance = _governance;
     }
 
+    // ── BN254 Curve Constants ──────────────────────────────────────────
+
+    /// @dev BN254 curve order (prime field)
+    uint256 private constant BN254_P =
+        21888242871839275222246405745257275088696311157297823662689037894645226208583;
+
+    /// @dev BN254 curve parameter b (y^2 = x^3 + 3)
+    uint256 private constant BN254_B = 3;
+
     // ── Internal ───────────────────────────────────────────────────────
 
-    /// @dev UltraHonk verification (simplified reference)
-    /// In production, use the auto-generated verifier from Noir's `nargo codegen-verifier`
-    /// which includes all round computations and multi-scalar multiplication.
+    /// @dev UltraHonk verification with structural validation
+    /// In production, replace with the auto-generated verifier from Noir's `nargo codegen-verifier`.
+    /// This implementation validates proof structure and EC points but delegates the actual
+    /// pairing check to the production verifier.
     function _verifyUltraHonk(
         bytes calldata proof,
         uint256[] calldata publicInputs,
         HonkVerificationKey storage vk
     ) private view returns (bool) {
-        // UltraHonk proof structure:
-        // 1. Wire commitments (W1, W2, W3, W4) — 4 x G1 points
-        // 2. Lookup/sort commitments
-        // 3. Grand product commitment (Z)
-        // 4. Quotient commitments (T1, T2, T3, T4)
-        // 5. Opening evaluations
-        // 6. KZG/IPA opening proof
-
-        // For reference implementation, we verify:
-        // 1. Proof structure is valid
-        // 2. Public input count matches VK
-        // 3. Pairing equation holds
-
+        // 1. Public input count must exactly match
         if (publicInputs.length != vk.numPublicInputs) return false;
 
-        // Minimum proof size for UltraHonk (simplified check)
-        // Real UltraHonk proof is ~2-4KB depending on circuit complexity
-        if (proof.length < 512) return false;
+        // 2. Minimum proof size: UltraHonk proofs contain
+        //    4 wire commitments (4 x 64B) + grand product (64B) +
+        //    quotient polys (4 x 64B) + opening evals + KZG proof
+        //    Minimum ~ 768 bytes for valid UltraHonk
+        if (proof.length < 768) return false;
 
-        // In production, this would be the full UltraHonk verification algorithm.
-        // The auto-generated verifier from `nargo codegen-verifier` handles:
-        // - Transcript initialization with Poseidon/Keccak
-        // - Challenge generation (beta, gamma, alpha, zeta)
-        // - Commitment validation (on curve checks)
-        // - Gate relation computations
-        // - Multi-scalar multiplication for batch verification
-        // - KZG pairing check
+        // 3. Validate proof is properly structured (multiple of 32 bytes)
+        if (proof.length % 32 != 0) return false;
 
-        // Placeholder: delegate to KZG pairing precompile when available
-        // For now, this returns true for well-formed proofs (TESTNET ONLY)
-        return proof.length >= 512 && publicInputs.length == vk.numPublicInputs;
+        // 4. Extract and validate wire commitment EC points (first 4 G1 points)
+        //    Each G1 point = (x, y) = 64 bytes
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 offset = i * 64;
+            if (offset + 64 > proof.length) return false;
+
+            uint256 px = uint256(bytes32(proof[offset:offset + 32]));
+            uint256 py = uint256(bytes32(proof[offset + 32:offset + 64]));
+
+            // Point at infinity is invalid for commitments
+            if (px == 0 && py == 0) return false;
+
+            // Validate point is on BN254 G1 curve: y^2 = x^3 + 3 (mod p)
+            if (!_isOnCurveG1(px, py)) return false;
+        }
+
+        // 5. Validate all public inputs are within field
+        for (uint256 i = 0; i < publicInputs.length; i++) {
+            if (publicInputs[i] >= BN254_P) return false;
+        }
+
+        // 6. Production verification:
+        //    In production, this delegates to the full UltraHonk verification algorithm
+        //    generated by `nargo codegen-verifier`. The auto-generated contract handles:
+        //    - Transcript initialization with Poseidon/Keccak
+        //    - Challenge generation (beta, gamma, alpha, zeta)
+        //    - Gate relation computations
+        //    - Multi-scalar multiplication for batch verification
+        //    - KZG pairing check via ecPairing precompile
+        //
+        // TESTNET ONLY: structural validation above catches malformed proofs.
+        // The pairing check is NOT performed here — deploy the real verifier for mainnet.
+        return true;
+    }
+
+    /// @dev Check if (x, y) is on BN254 G1: y^2 = x^3 + 3 (mod p)
+    function _isOnCurveG1(uint256 x, uint256 y) private pure returns (bool) {
+        if (x >= BN254_P || y >= BN254_P) return false;
+
+        uint256 lhs = mulmod(y, y, BN254_P);
+        uint256 x3 = mulmod(mulmod(x, x, BN254_P), x, BN254_P);
+        uint256 rhs = addmod(x3, BN254_B, BN254_P);
+
+        return lhs == rhs;
     }
 }

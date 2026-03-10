@@ -20,7 +20,7 @@ contract DeployEvmos is Script {
 
         vm.startBroadcast(deployerKey);
 
-        address verifier = _deployPlaceholderVerifier();
+        address verifier = _resolveVerifier();
         EpochManager epochManager = new EpochManager(
             EPOCH_DURATION,
             block.chainid
@@ -45,6 +45,21 @@ contract DeployEvmos is Script {
         console.log("EpochManager: ", address(epochManager));
         console.log("PrivacyPool:  ", address(pool));
         console.log("IbcAdapter:   ", address(ibcAdapter));
+    }
+
+    /// @dev Resolve the verifier address: use VERIFIER_ADDRESS env var if set,
+    ///      otherwise deploy placeholder. Reverts on mainnet if no real verifier provided.
+    function _resolveVerifier() internal returns (address) {
+        try vm.envAddress("VERIFIER_ADDRESS") returns (address addr) {
+            require(addr != address(0), "VERIFIER_ADDRESS cannot be zero");
+            return addr;
+        } catch {
+            require(
+                block.chainid != 9001, // Evmos mainnet
+                "MAINNET DEPLOY BLOCKED: Set VERIFIER_ADDRESS to a real ZK verifier. Placeholder verifiers are forbidden on mainnet."
+            );
+            return _deployPlaceholderVerifier();
+        }
     }
 
     function _deployPlaceholderVerifier() internal returns (address) {
