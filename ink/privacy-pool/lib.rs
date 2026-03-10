@@ -236,10 +236,9 @@ mod privacy_pool {
                 }
             }
 
-            // 3. Verify ZK proof (placeholder — would call on-chain verifier).
-            if proof.is_empty() {
-                return Err(Error::InvalidProof);
-            }
+            // 3. Verify ZK proof — structural validation.
+            // Production: replace with cross-contract call to a deployed Halo2/Groth16 verifier.
+            Self::verify_proof_structure(&proof, &nullifiers, &output_commitments)?;
 
             // 4. Mark nullifiers as spent.
             for nf in &nullifiers {
@@ -293,9 +292,7 @@ mod privacy_pool {
                 }
             }
 
-            if proof.is_empty() {
-                return Err(Error::InvalidProof);
-            }
+            Self::verify_proof_structure(&proof, &nullifiers, &output_commitments)?;
 
             if amount > self.pool_balance {
                 return Err(Error::InsufficientFunds);
@@ -444,6 +441,49 @@ mod privacy_pool {
         }
 
         // ── Internal ───────────────────────────
+
+        /// Structural proof validation for ZK proofs.
+        ///
+        /// Validates proof format, size, alignment, and public input integrity.
+        /// Production: replace with a cross-contract call to a deployed
+        /// Halo2/Groth16 verifier contract.
+        fn verify_proof_structure(
+            proof: &[u8],
+            nullifiers: &[[u8; 32]; 2],
+            output_commitments: &[[u8; 32]; 2],
+        ) -> Result<()> {
+            // Minimum proof size: 192 bytes (3 G1 points for Groth16)
+            if proof.len() < 192 {
+                return Err(Error::InvalidProof);
+            }
+            // Maximum proof size
+            if proof.len() > 4096 {
+                return Err(Error::InvalidProof);
+            }
+            // 32-byte field element alignment
+            if proof.len() % 32 != 0 {
+                return Err(Error::InvalidProof);
+            }
+            // Reject trivially forged all-zero proofs
+            if proof.iter().all(|&b| b == 0) {
+                return Err(Error::InvalidProof);
+            }
+            // Nullifiers must be distinct
+            if nullifiers[0] == nullifiers[1] {
+                return Err(Error::InvalidProof);
+            }
+            // Nullifiers must be non-zero
+            if nullifiers[0] == [0u8; 32] || nullifiers[1] == [0u8; 32] {
+                return Err(Error::InvalidProof);
+            }
+            // Output commitments must be non-zero
+            for cm in output_commitments {
+                if *cm == [0u8; 32] {
+                    return Err(Error::InvalidProof);
+                }
+            }
+            Ok(())
+        }
 
         /// Check if a root is in the history.
         fn is_known_root(&self, root: [u8; 32]) -> bool {

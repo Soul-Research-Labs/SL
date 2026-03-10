@@ -462,12 +462,16 @@ impl PrivacyPool {
 ///
 /// Performs structural validation of the proof envelope. In production,
 /// this should call a co-deployed ZK verifier contract or use a NEAR
-/// precompile for Groth16/Halo2 verification.
+/// Structural proof verification — validates format and public input integrity.
+///
+/// TESTNET ONLY. For mainnet, deploy a co-deployed ZK verifier contract
+/// or use a NEAR precompile for Groth16/Halo2 verification.
 ///
 /// # Structural checks performed:
-/// - Proof length >= 256 bytes (minimum for a serialized Groth16 proof)
+/// - Proof is valid hex and >= 384 hex chars (192 bytes Groth16 minimum)
+/// - Proof is not all-zero (trivially forged)
 /// - No duplicate nullifiers (double-spend prevention)
-/// - All output commitments are non-zero
+/// - All output commitments are non-zero and distinct
 /// - Merkle root is non-zero
 fn verify_proof_placeholder(
     proof: &str,
@@ -475,23 +479,48 @@ fn verify_proof_placeholder(
     nullifiers: &[String],
     output_commitments: &[String],
 ) -> bool {
-    // Minimum proof size for a serialized Groth16 proof (3 G1 points)
-    if proof.len() < 256 {
+    // Minimum proof size: hex-encoded 192 bytes = 384 hex chars
+    if proof.len() < 384 {
+        return false;
+    }
+    // Maximum proof size
+    if proof.len() > 8192 {
+        return false;
+    }
+    // Proof must be valid hex
+    if !proof.chars().all(|c| c.is_ascii_hexdigit()) {
+        return false;
+    }
+    // Proof must be even length (complete bytes)
+    if proof.len() % 2 != 0 {
+        return false;
+    }
+    // Reject all-zero proof
+    if proof.chars().all(|c| c == '0') {
         return false;
     }
     // No duplicate nullifiers
     if nullifiers.len() >= 2 && nullifiers[0] == nullifiers[1] {
         return false;
     }
+    // Nullifiers must be non-zero
+    for nul in nullifiers {
+        if nul.is_empty() || nul.chars().all(|c| c == '0') {
+            return false;
+        }
+    }
     // Non-zero root
     if merkle_root.is_empty() || merkle_root.chars().all(|c| c == '0') {
         return false;
     }
-    // Non-zero output commitments
+    // Non-zero and distinct output commitments
     for cm in output_commitments {
         if cm.is_empty() || cm.chars().all(|c| c == '0') {
             return false;
         }
+    }
+    if output_commitments.len() >= 2 && output_commitments[0] == output_commitments[1] {
+        return false;
     }
     true
 }

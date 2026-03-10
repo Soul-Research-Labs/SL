@@ -506,19 +506,57 @@ fn compute_nullifier_root(nullifiers: &[String]) -> String {
     current
 }
 
-/// Placeholder proof verification — accepts structurally valid proofs.
+/// Structural proof verification — validates proof format and public inputs.
+///
 /// MUST BE REPLACED with actual Halo2→SNARK verification before mainnet.
+/// Current checks reject malformed proofs but cannot prevent forgery.
 fn verify_proof_placeholder(
     proof: &str,
-    _merkle_root: &str,
+    merkle_root: &str,
     nullifiers: &[String; 2],
-    _output_commitments: &[String; 2],
+    output_commitments: &[String; 2],
 ) -> bool {
-    // Basic structural checks
-    if proof.len() < 64 {
+    // Minimum proof size: hex-encoded Groth16 proof = 2 × 192 = 384 hex chars
+    if proof.len() < 384 {
         return false;
     }
+    // Maximum proof size
+    if proof.len() > 8192 {
+        return false;
+    }
+    // Proof must be valid hex
+    if !proof.chars().all(|c| c.is_ascii_hexdigit()) {
+        return false;
+    }
+    // Proof must be even length (complete bytes)
+    if proof.len() % 2 != 0 {
+        return false;
+    }
+    // Reject all-zero proof
+    if proof.chars().all(|c| c == '0') {
+        return false;
+    }
+    // Nullifiers must be distinct
     if nullifiers[0] == nullifiers[1] {
+        return false;
+    }
+    // Nullifiers must be non-empty and non-zero
+    for nul in nullifiers {
+        if nul.is_empty() || nul.chars().all(|c| c == '0') {
+            return false;
+        }
+    }
+    // Merkle root must be non-zero
+    if merkle_root.is_empty() || merkle_root.chars().all(|c| c == '0') {
+        return false;
+    }
+    // Output commitments must be non-zero and distinct
+    for cm in output_commitments {
+        if cm.is_empty() || cm.chars().all(|c| c == '0') {
+            return false;
+        }
+    }
+    if output_commitments[0] == output_commitments[1] {
         return false;
     }
     true

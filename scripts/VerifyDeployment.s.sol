@@ -72,13 +72,29 @@ contract VerifyDeployment is Script {
         address timelock = _envAddressOr("TIMELOCK", address(0));
         address verifier = _envAddressOr("VERIFIER", address(0));
         address compliance = _envAddressOr("COMPLIANCE", address(0));
-        address expectedGovernance = _envAddressOr("EXPECTED_GOVERNANCE", address(0));
-        address expectedGuardian = _envAddressOr("EXPECTED_GUARDIAN", address(0));
-        uint256 expectedChainId = _envUintOr("EXPECTED_CHAIN_ID", block.chainid);
+        address expectedGovernance = _envAddressOr(
+            "EXPECTED_GOVERNANCE",
+            address(0)
+        );
+        address expectedGuardian = _envAddressOr(
+            "EXPECTED_GUARDIAN",
+            address(0)
+        );
+        uint256 expectedChainId = _envUintOr(
+            "EXPECTED_CHAIN_ID",
+            block.chainid
+        );
         uint256 expectedAppId = _envUintOr("EXPECTED_APP_ID", 1);
         uint256 expectedDelay = _envUintOr("EXPECTED_DELAY", 2 days);
 
-        if (pool != address(0)) _verifyPool(pool, verifier, epochManager, expectedChainId, expectedAppId);
+        if (pool != address(0))
+            _verifyPool(
+                pool,
+                verifier,
+                epochManager,
+                expectedChainId,
+                expectedAppId
+            );
         if (epochManager != address(0)) _verifyEpochManager(epochManager, pool);
         if (timelock != address(0)) _verifyTimelock(timelock, expectedDelay);
         if (verifier != address(0)) _verifyVerifier(verifier);
@@ -105,7 +121,10 @@ contract VerifyDeployment is Script {
 
     // ── Env helpers ────────────────────────────────────
 
-    function _envAddressOr(string memory key, address fallback_) internal view returns (address) {
+    function _envAddressOr(
+        string memory key,
+        address fallback_
+    ) internal view returns (address) {
         try vm.envAddress(key) returns (address val) {
             return val;
         } catch {
@@ -113,7 +132,10 @@ contract VerifyDeployment is Script {
         }
     }
 
-    function _envUintOr(string memory key, uint256 fallback_) internal view returns (uint256) {
+    function _envUintOr(
+        string memory key,
+        uint256 fallback_
+    ) internal view returns (uint256) {
         try vm.envUint(key) returns (uint256 val) {
             return val;
         } catch {
@@ -139,7 +161,10 @@ contract VerifyDeployment is Script {
         }
         _check("Pool: epochManager set", pool.epochManager() != address(0));
         if (epochManager != address(0)) {
-            _check("Pool: epochManager matches", pool.epochManager() == epochManager);
+            _check(
+                "Pool: epochManager matches",
+                pool.epochManager() == epochManager
+            );
         }
         _check(
             "Pool: domainChainId correct",
@@ -168,7 +193,10 @@ contract VerifyDeployment is Script {
 
     // ── Epoch Manager Checks ───────────────────────────
 
-    function _verifyEpochManager(address epochManagerAddr, address pool) internal {
+    function _verifyEpochManager(
+        address epochManagerAddr,
+        address pool
+    ) internal {
         console2.log("--- EpochManager ---");
         IEpochVerify em = IEpochVerify(epochManagerAddr);
 
@@ -181,17 +209,17 @@ contract VerifyDeployment is Script {
 
     // ── Timelock Checks ────────────────────────────────
 
-    function _verifyTimelock(address timelockAddr, uint256 expectedDelay) internal {
+    function _verifyTimelock(
+        address timelockAddr,
+        uint256 expectedDelay
+    ) internal {
         console2.log("--- GovernanceTimelock ---");
         ITimelockVerify tl = ITimelockVerify(timelockAddr);
 
         _check("Timelock: admin set", tl.admin() != address(0));
         _check("Timelock: delay >= MINIMUM", tl.delay() >= tl.MINIMUM_DELAY());
         _check("Timelock: delay <= MAXIMUM", tl.delay() <= tl.MAXIMUM_DELAY());
-        _check(
-            "Timelock: delay matches expected",
-            tl.delay() == expectedDelay
-        );
+        _check("Timelock: delay matches expected", tl.delay() == expectedDelay);
         _check(
             "Timelock: grace period = 14 days",
             tl.GRACE_PERIOD() == 14 days
@@ -227,7 +255,10 @@ contract VerifyDeployment is Script {
 
     // ── Cross-link Checks ──────────────────────────────
 
-    function _verifyCrossLinks(address poolAddr, address timelockAddr) internal {
+    function _verifyCrossLinks(
+        address poolAddr,
+        address timelockAddr
+    ) internal {
         console2.log("--- Cross-Links ---");
 
         IPoolVerify pool = IPoolVerify(poolAddr);
