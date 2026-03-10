@@ -44,7 +44,7 @@ jobs:
         run: cargo clippy -p pallet-privacy-pool -- -D warnings
 
       - name: Test
-        run: cargo test -p pallet-privacy-pool
+        run: cargo test -p pallet-privacy-pool --locked
 
       - name: Build (no_std / wasm)
         run: cargo build -p pallet-privacy-pool --no-default-features --target wasm32-unknown-unknown
@@ -69,7 +69,7 @@ jobs:
         run: cargo clippy -p lumora-coprocessor -- -D warnings
 
       - name: Test
-        run: cargo test -p lumora-coprocessor
+        run: cargo test -p lumora-coprocessor --locked
 
   cosmwasm:
     name: CosmWasm Contract
@@ -92,7 +92,7 @@ jobs:
         run: cargo clippy -p privacy-pool-cosmwasm -- -D warnings
 
       - name: Test
-        run: cargo test -p privacy-pool-cosmwasm
+        run: cargo test -p privacy-pool-cosmwasm --locked
 
       - name: Build Wasm
         run: |
@@ -122,7 +122,7 @@ jobs:
         run: cargo clippy -p privacy-pool-near -- -D warnings
 
       - name: Test
-        run: cargo test -p privacy-pool-near
+        run: cargo test -p privacy-pool-near --locked
 
       - name: Build Wasm
         run: |

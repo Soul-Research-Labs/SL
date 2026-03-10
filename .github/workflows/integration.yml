@@ -23,6 +23,15 @@ jobs:
         with:
           version: nightly
 
+      - name: Verify integration test files exist
+        run: |
+          count=$(find test/integration -name '*.t.sol' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No integration test files found"
+            exit 1
+          fi
+          echo "Found $count integration test files"
+
       - name: Run integration tests
         run: forge test --match-path "test/integration/*" -vvv
 
@@ -54,6 +63,15 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
+
+      - name: Verify fuzz test files exist
+        run: |
+          count=$(find test/fuzz -name '*.t.sol' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No fuzz test files found"
+            exit 1
+          fi
+          echo "Found $count fuzz test files"
 
       - name: Run fuzz tests (extended runs)
         run: forge test --match-path "test/fuzz/*" -vvv

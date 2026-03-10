@@ -41,4 +41,11 @@ jobs:
 
       - name: Test
         working-directory: sdk
-        run: npm test
+        run: npm test -- --ci --coverage
+
+      - name: Upload coverage
+        if: matrix.node-version == 20
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdk/coverage/lcov.info
+          flags: sdk

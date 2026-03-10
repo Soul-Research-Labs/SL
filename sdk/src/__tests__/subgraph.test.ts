@@ -111,9 +111,7 @@ const METRICS: PoolMetricsEntity = {
 describe("SubgraphClient", () => {
   describe("query()", () => {
     it("sends POST with JSON body to endpoint", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ deposits: [DEPOSIT] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ deposits: [DEPOSIT] }));
 
       const client = makeClient();
       await client.getDeposits();
@@ -146,9 +144,7 @@ describe("SubgraphClient", () => {
 
   describe("getDeposits()", () => {
     it("returns deposits array", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ deposits: [DEPOSIT] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ deposits: [DEPOSIT] }));
       const client = makeClient();
       const result = await client.getDeposits();
       expect(result).toHaveLength(1);
@@ -156,9 +152,7 @@ describe("SubgraphClient", () => {
     });
 
     it("respects pagination options", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ deposits: [] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ deposits: [] }));
       const client = makeClient();
       await client.getDeposits({ first: 10, skip: 5 });
 
@@ -172,9 +166,7 @@ describe("SubgraphClient", () => {
 
   describe("getDepositByCommitment()", () => {
     it("returns matching deposit", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ deposits: [DEPOSIT] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ deposits: [DEPOSIT] }));
       const client = makeClient();
       const result = await client.getDepositByCommitment("0xaabb");
       expect(result).not.toBeNull();
@@ -182,9 +174,7 @@ describe("SubgraphClient", () => {
     });
 
     it("returns null when not found", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ deposits: [] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ deposits: [] }));
       const client = makeClient();
       expect(await client.getDepositByCommitment("0xffff")).toBeNull();
     });
@@ -199,9 +189,7 @@ describe("SubgraphClient", () => {
 
   describe("getTransfers()", () => {
     it("returns transfers array", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ transfers: [TRANSFER] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ transfers: [TRANSFER] }));
       const client = makeClient();
       const result = await client.getTransfers();
       expect(result).toHaveLength(1);
@@ -211,9 +199,7 @@ describe("SubgraphClient", () => {
 
   describe("getTransferByNullifier()", () => {
     it("finds by nullifier0", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ transfers: [TRANSFER] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ transfers: [TRANSFER] }));
       const client = makeClient();
       const result = await client.getTransferByNullifier("0xnul0");
       expect(result).not.toBeNull();
@@ -278,9 +264,7 @@ describe("SubgraphClient", () => {
 
   describe("getEpochs()", () => {
     it("returns epochs array", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ epochs: [EPOCH] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ epochs: [EPOCH] }));
       const client = makeClient();
       const result = await client.getEpochs();
       expect(result).toHaveLength(1);
@@ -290,9 +274,7 @@ describe("SubgraphClient", () => {
 
   describe("getLatestEpoch()", () => {
     it("returns the latest epoch", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ epochs: [EPOCH] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ epochs: [EPOCH] }));
       const client = makeClient();
       const epoch = await client.getLatestEpoch();
       expect(epoch).not.toBeNull();
@@ -308,9 +290,7 @@ describe("SubgraphClient", () => {
 
   describe("getPoolMetrics()", () => {
     it("returns metrics entity", async () => {
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ poolMetrics: METRICS }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ poolMetrics: METRICS }));
       const client = makeClient();
       const metrics = await client.getPoolMetrics();
       expect(metrics).not.toBeNull();
@@ -322,9 +302,7 @@ describe("SubgraphClient", () => {
   describe("isNullifierSpent()", () => {
     it("returns true when found in transfers", async () => {
       // getTransferByNullifier finds it in nullifier0
-      mockFetch.mockResolvedValueOnce(
-        gqlResponse({ transfers: [TRANSFER] }),
-      );
+      mockFetch.mockResolvedValueOnce(gqlResponse({ transfers: [TRANSFER] }));
       const client = makeClient();
       expect(await client.isNullifierSpent("0xnul0")).toBe(true);
     });
@@ -335,9 +313,7 @@ describe("SubgraphClient", () => {
         .mockResolvedValueOnce(gqlResponse({ transfers: [] }))
         .mockResolvedValueOnce(gqlResponse({ transfers: [] }))
         // Withdrawal nullifier0 check
-        .mockResolvedValueOnce(
-          gqlResponse({ withdrawals: [{ id: "w1" }] }),
-        );
+        .mockResolvedValueOnce(gqlResponse({ withdrawals: [{ id: "w1" }] }));
       const client = makeClient();
       expect(await client.isNullifierSpent("0xaabb")).toBe(true);
     });
@@ -357,7 +333,9 @@ describe("SubgraphClient", () => {
     it("rejects GraphQL injection in commitment lookup", async () => {
       const client = makeClient();
       await expect(
-        client.getDepositByCommitment("0x00\" } ) { id } __schema { types { name"),
+        client.getDepositByCommitment(
+          '0x00" } ) { id } __schema { types { name',
+        ),
       ).rejects.toThrow("Invalid hex value");
     });
 
@@ -370,9 +348,9 @@ describe("SubgraphClient", () => {
 
     it("rejects malformed address in recipient lookup", async () => {
       const client = makeClient();
-      await expect(
-        client.getWithdrawalsByRecipient("0xZZZZ"),
-      ).rejects.toThrow("Invalid address");
+      await expect(client.getWithdrawalsByRecipient("0xZZZZ")).rejects.toThrow(
+        "Invalid address",
+      );
     });
   });
 });

@@ -39,8 +39,7 @@ const MOCK_OUT_1: Hex =
   "0x6666666666666666666666666666666666666666666666666666666666666666";
 const MOCK_TX_HASH: Hash =
   "0xabcdef0000000000000000000000000000000000000000000000000000000000";
-const MOCK_RECIPIENT: Address =
-  "0x0000000000000000000000000000000000000001";
+const MOCK_RECIPIENT: Address = "0x0000000000000000000000000000000000000001";
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -184,10 +183,7 @@ describe("SoulPrivacyClient", () => {
     it("returns estimated fee", async () => {
       mockReadContract.mockResolvedValueOnce(50000000000000000n);
       const client = new SoulPrivacyClient(CHAIN_KEY);
-      const fee = await client.estimateBridgeFee(
-        43114n,
-        "0xdeadbeef" as Hex,
-      );
+      const fee = await client.estimateBridgeFee(43114n, "0xdeadbeef" as Hex);
       expect(fee).toBe(50000000000000000n);
     });
   });
