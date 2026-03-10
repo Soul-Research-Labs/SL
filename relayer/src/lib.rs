@@ -44,6 +44,7 @@
 
 pub mod aggregator;
 pub mod config;
+pub mod dispatcher;
 pub mod health;
 pub mod metrics;
 pub mod watcher;
@@ -130,35 +131,39 @@ pub async fn run_relayer(config: RelayerConfig) -> Result<(), Box<dyn std::error
         aggregator::run_aggregator(agg_config, event_rx, cmd_tx).await;
     });
 
-    // Process relay commands
+    // Spawn dispatcher to process relay commands
+    let dispatch_config = config.clone();
+    let dispatch_metrics = metrics.clone();
     let mut cmd_rx = cmd_rx;
     while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
+        let dispatcher = dispatcher::Dispatcher::new(dispatch_config.clone(), dispatch_metrics.clone());
+        match &cmd {
             RelayCommand::SendToChain {
                 target_chain_id,
                 source_chain_id,
                 epoch_id,
-                nullifier_root,
+                ..
             } => {
                 info!(
                     "Relaying epoch {} root from chain {} to chain {}",
                     epoch_id, source_chain_id, target_chain_id
                 );
-                metrics.inc_relays_dispatched();
-                // Actual bridge relay happens here via the submitter
             }
             RelayCommand::SubmitToRegistry {
                 source_chain_id,
                 epoch_id,
-                nullifier_root,
                 nullifier_count,
+                ..
             } => {
                 info!(
                     "Submitting epoch {} root from chain {} to universal registry ({} nullifiers)",
                     epoch_id, source_chain_id, nullifier_count
                 );
-                metrics.inc_registry_submissions();
             }
+        }
+        if let Err(e) = dispatcher.dispatch(cmd).await {
+            error!("Dispatch failed: {}", e);
+            metrics.inc_relay_failures();
         }
     }
 

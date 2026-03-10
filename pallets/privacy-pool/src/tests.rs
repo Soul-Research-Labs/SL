@@ -5,6 +5,7 @@ use crate::pallet::*;
 use frame_support::{
     assert_noop, assert_ok, construct_runtime, parameter_types,
     traits::{ConstU32, ConstU64, Everything},
+    PalletId,
 };
 use sp_core::H256;
 use sp_runtime::{
@@ -82,6 +83,7 @@ frame_support::parameter_types! {
     pub const RootHistorySizeVal: u32 = 100;
     pub const ParaIdVal: u32 = 2100;
     pub const AppIdVal: u32 = 1;
+    pub const PoolPalletId: PalletId = PalletId(*b"prv/pool");
     pub const ConstU128<const V: u128>: u128 = V;
 }
 
@@ -113,6 +115,7 @@ impl pallet_privacy_pool::Config for Test {
     type RootHistorySize = RootHistorySizeVal;
     type ParaId = ParaIdVal;
     type AppId = AppIdVal;
+    type PalletId = PoolPalletId;
     type WeightInfo = TestWeightInfo;
 }
 
@@ -284,8 +287,8 @@ fn epoch_initialized_at_genesis() {
 #[test]
 fn finalize_epoch_works() {
     new_test_ext().execute_with(|| {
-        // Finalize epoch 0
-        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::signed(ALICE)));
+        // Finalize epoch 0 (requires root origin)
+        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::root()));
 
         // Check epoch 0 is finalized
         let epoch0 = Epochs::<Test>::get(0).unwrap();
@@ -301,10 +304,10 @@ fn finalize_epoch_works() {
 #[test]
 fn finalize_already_finalized_epoch_fails() {
     new_test_ext().execute_with(|| {
-        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::signed(ALICE)));
+        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::root()));
 
         // Finalize epoch 1 (the new current epoch)
-        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::signed(ALICE)));
+        assert_ok!(PrivacyPool::finalize_epoch(RuntimeOrigin::root()));
 
         // Current epoch is now 2 — epoch 0 is already finalized, but
         // we can only finalize the current epoch, which is 2
@@ -322,7 +325,7 @@ fn sync_epoch_root_works() {
         let root = H256::repeat_byte(0xAB);
 
         assert_ok!(PrivacyPool::sync_epoch_root(
-            RuntimeOrigin::signed(ALICE),
+            RuntimeOrigin::root(),
             source_para,
             epoch,
             root,
@@ -351,13 +354,13 @@ fn sync_multiple_remote_roots() {
         let root_b = H256::repeat_byte(0x02);
 
         assert_ok!(PrivacyPool::sync_epoch_root(
-            RuntimeOrigin::signed(ALICE),
+            RuntimeOrigin::root(),
             2001,
             0,
             root_a,
         ));
         assert_ok!(PrivacyPool::sync_epoch_root(
-            RuntimeOrigin::signed(ALICE),
+            RuntimeOrigin::root(),
             2002,
             0,
             root_b,

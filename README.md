@@ -78,8 +78,8 @@
 │   ├── bridges/             # AvaxWarp, Teleporter, XCM, IBC, AuroraRainbow adapters
 │   └── verifiers/           # Halo2SnarkVerifier, UltraHonkVerifier
 ├── scripts/deploy/          # Foundry deploy scripts per chain
-├── test/                    # Foundry test suite + gas benchmarks + cross-chain relay tests
-├── certora/                 # Formal verification specs + configs
+├── test/                    # Foundry tests: PrivacyPool, EpochManager, NullifierRegistry, Libraries, MultiSig, CrossChain, RelayerFeeVault, StealthAnnouncer
+├── certora/                 # Formal verification specs + configs (6 specs: Pool, Registry, MultiSig, Timelock, Compliance, Bridges)
 ├── noir/circuits/           # Noir ZK circuits (deposit, transfer, withdraw, nullifier_check, stealth)
 ├── sdk/                     # TypeScript SDK (client, router, wallet, stealth, prover, fees, subgraph, chain configs)
 ├── subgraph/                # The Graph subgraph (schema, mappings for PrivacyPool, EpochManager, Governance)
@@ -88,7 +88,7 @@
 ├── lumora-coprocessor/      # Off-chain Halo2 proof generation + circuit definitions
 ├── cosmwasm/                # CosmWasm privacy pool contract
 ├── near/                    # Near privacy pool contract
-├── relayer/                 # Cross-chain event relayer (Rust) with Prometheus metrics
+├── relayer/                 # Cross-chain event relayer (Rust) with Prometheus metrics + dispatcher
 ├── runtime/                 # Example Substrate runtime integration
 ├── docker/                  # Dockerfiles + docker-compose (relayer, lumora, monitoring, Grafana dashboards)
 └── .github/workflows/       # CI/CD (Solidity, Rust, SDK, deploy)

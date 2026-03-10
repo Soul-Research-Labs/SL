@@ -58,7 +58,9 @@ mod privacy_pool {
     #[ink(event)]
     pub struct Withdrawn {
         #[ink(topic)]
-        nullifier: [u8; 32],
+        nullifier_0: [u8; 32],
+        #[ink(topic)]
+        nullifier_1: [u8; 32],
         #[ink(topic)]
         recipient: AccountId,
         amount: Balance,
@@ -276,7 +278,8 @@ mod privacy_pool {
             &mut self,
             proof: Vec<u8>,
             merkle_root: [u8; 32],
-            nullifier: [u8; 32],
+            nullifiers: [[u8; 32]; 2],
+            output_commitments: [[u8; 32]; 2],
             recipient: AccountId,
             amount: Balance,
         ) -> Result<()> {
@@ -284,8 +287,10 @@ mod privacy_pool {
                 return Err(Error::UnknownRoot);
             }
 
-            if self.nullifiers.get(nullifier).unwrap_or(false) {
-                return Err(Error::NullifierAlreadySpent);
+            for nf in &nullifiers {
+                if self.nullifiers.get(nf).unwrap_or(false) {
+                    return Err(Error::NullifierAlreadySpent);
+                }
             }
 
             if proof.is_empty() {
@@ -296,9 +301,27 @@ mod privacy_pool {
                 return Err(Error::InsufficientFunds);
             }
 
-            // Mark nullifier as spent.
-            self.nullifiers.insert(nullifier, &true);
+            // Mark nullifiers as spent.
+            for nf in &nullifiers {
+                self.nullifiers.insert(nf, &true);
+            }
+
+            // Insert output commitments (change notes).
+            for cm in &output_commitments {
+                if *cm != [0u8; 32] {
+                    if self.leaves.contains(*cm) {
+                        return Err(Error::DuplicateCommitment);
+                    }
+                    let idx = self.next_leaf_index;
+                    self.leaves.insert(*cm, &idx);
+                    self.nodes.insert((0, idx), cm);
+                    self.update_tree(idx, *cm);
+                    self.next_leaf_index = idx + 1;
+                }
+            }
+
             self.pool_balance -= amount;
+            self.push_root(self.current_root);
 
             // Transfer funds.
             self.env()
@@ -306,7 +329,8 @@ mod privacy_pool {
                 .map_err(|_| Error::InsufficientFunds)?;
 
             self.env().emit_event(Withdrawn {
-                nullifier,
+                nullifier_0: nullifiers[0],
+                nullifier_1: nullifiers[1],
                 recipient,
                 amount,
             });

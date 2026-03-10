@@ -44,4 +44,7 @@ pub enum ContractError {
 
     #[error("Invalid hex string: {0}")]
     InvalidHex(String),
+
+    #[error("Invalid nullifier root: cannot be empty")]
+    InvalidNullifierRoot {},
 }

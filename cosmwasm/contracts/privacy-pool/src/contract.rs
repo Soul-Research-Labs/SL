@@ -32,6 +32,8 @@ pub fn instantiate(
         domain_chain_id: msg.domain_chain_id,
         domain_app_id: msg.domain_app_id,
         governance: msg.governance,
+        accepted_denom: msg.accepted_denom,
+        authorized_relayer: None,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -99,14 +101,17 @@ pub fn execute(
             recipient,
             exit_value,
         ),
-        ExecuteMsg::FinalizeEpoch {} => execute_finalize_epoch(deps, env),
+        ExecuteMsg::FinalizeEpoch {} => execute_finalize_epoch(deps, env, info),
         ExecuteMsg::SyncEpochRoot {
             source_chain_id,
             epoch_id,
             nullifier_root,
-        } => execute_sync_epoch_root(deps, source_chain_id, epoch_id, nullifier_root),
+        } => execute_sync_epoch_root(deps, info, source_chain_id, epoch_id, nullifier_root),
         ExecuteMsg::UpdateGovernance { new_governance } => {
             execute_update_governance(deps, info, new_governance)
+        }
+        ExecuteMsg::SetAuthorizedRelayer { relayer } => {
+            execute_set_authorized_relayer(deps, info, relayer)
         }
     }
 }
@@ -173,7 +178,7 @@ fn execute_deposit(
     let amount = info
         .funds
         .iter()
-        .find(|c| c.denom == "uatom" || c.denom == "aevmos" || c.denom == "uosmo")
+        .find(|c| c.denom == config.accepted_denom)
         .map(|c| c.amount)
         .unwrap_or(Uint128::zero());
 
@@ -276,11 +281,12 @@ fn execute_withdraw(
         Ok(b.checked_sub(exit_value).unwrap_or(Uint128::zero()))
     })?;
 
-    // Send funds to recipient
+    // Send funds to recipient using the configured denom
+    let config = CONFIG.load(deps.storage)?;
     let send_msg = BankMsg::Send {
         to_address: recipient.clone(),
         amount: vec![Coin {
-            denom: "uatom".to_string(), // configurable per chain
+            denom: config.accepted_denom,
             amount: exit_value,
         }],
     };
@@ -292,7 +298,12 @@ fn execute_withdraw(
         .add_attribute("amount", exit_value.to_string()))
 }
 
-fn execute_finalize_epoch(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+fn execute_finalize_epoch(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    if info.sender.to_string() != config.governance {
+        return Err(ContractError::Unauthorized {});
+    }
+
     let epoch_id = CURRENT_EPOCH_ID.load(deps.storage)?;
     let mut epoch = EPOCHS.load(deps.storage, epoch_id)?;
 
@@ -335,10 +346,24 @@ fn execute_finalize_epoch(deps: DepsMut, env: Env) -> Result<Response, ContractE
 
 fn execute_sync_epoch_root(
     deps: DepsMut,
+    info: MessageInfo,
     source_chain_id: u32,
     epoch_id: u64,
     nullifier_root: String,
 ) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    let is_authorized = info.sender.to_string() == config.governance
+        || config
+            .authorized_relayer
+            .as_ref()
+            .map_or(false, |r| &info.sender.to_string() == r);
+    if !is_authorized {
+        return Err(ContractError::Unauthorized {});
+    }
+    if nullifier_root.is_empty() {
+        return Err(ContractError::InvalidNullifierRoot {});
+    }
+
     REMOTE_EPOCH_ROOTS.save(deps.storage, (source_chain_id, epoch_id), &nullifier_root)?;
 
     Ok(Response::new()
@@ -363,6 +388,23 @@ fn execute_update_governance(
     Ok(Response::new()
         .add_attribute("action", "update_governance")
         .add_attribute("new_governance", new_governance))
+}
+
+fn execute_set_authorized_relayer(
+    deps: DepsMut,
+    info: MessageInfo,
+    relayer: Option<String>,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    if info.sender.to_string() != config.governance {
+        return Err(ContractError::Unauthorized {});
+    }
+    config.authorized_relayer = relayer.clone();
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_authorized_relayer")
+        .add_attribute("relayer", relayer.unwrap_or_default()))
 }
 
 // ── Internal Helpers ───────────────────────────────────────
@@ -482,26 +524,18 @@ fn verify_proof_placeholder(
     true
 }
 
-/// Poseidon hash placeholder using keccak256.
-/// Replace with lumora-primitives Poseidon when compiled to CosmWasm.
+/// Poseidon hash placeholder using SHA-256.
+///
+/// SHA-256 is cryptographically secure and available natively in CosmWasm.
+/// In production, replace with a Poseidon implementation compiled to Wasm
+/// for ZK-circuit alignment.
 fn poseidon_hash_hex(left: &str, right: &str) -> String {
-    use cosmwasm_std::Api;
-    // Simple concatenation + hash as placeholder
-    let combined = format!("{}{}", left, right);
-    // Use SHA-256 as a temporary stand-in (available in CosmWasm)
-    let digest = cosmwasm_std::testing::mock_dependencies()
-        .api
-        .debug(&combined);
-    // Fallback: manual hash for determinism
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(left.as_bytes());
-    bytes.extend_from_slice(right.as_bytes());
-    // Simple non-cryptographic hash for compilation
-    let mut hash = [0u8; 32];
-    for (i, byte) in bytes.iter().enumerate() {
-        hash[i % 32] ^= byte;
-    }
-    hex::encode(hash)
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(left.as_bytes());
+    hasher.update(right.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
 }
 
 fn zero_hash(level: u32) -> String {

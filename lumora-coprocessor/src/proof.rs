@@ -11,6 +11,7 @@
 //! 4. **Envelope Packaging**: Package into 2048-byte ProofEnvelope for metadata resistance
 
 use crate::types::*;
+use sha3::{Digest, Keccak256};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -97,12 +98,15 @@ impl ProofGenerator {
         //   )?;
 
         // Placeholder: generate a structurally valid proof envelope
-        let raw_proof = Self::placeholder_proof(2048);
+        // In production the raw_proof is the Halo2 IPA proof bytes
+        let proof_body = keccak256(&output_commitments[0]);
+        let raw_proof = Self::padded_proof_envelope(&proof_body, 2048);
 
         // SNARK wrapping for EVM targets
         let snark_wrapper = if self.snark_wrapper_pk.is_some() {
             // In production: snark_wrap(&raw_proof, &self.snark_wrapper_pk)
-            Some(Self::placeholder_proof(256))
+            let snark_body = keccak256(&nullifiers[0]);
+            Some(Self::padded_proof_envelope(&snark_body, 256))
         } else {
             None
         };
@@ -142,9 +146,11 @@ impl ProofGenerator {
         // Zero commitment for the second output (no second output in withdraw)
         let zero_commitment = [0u8; 32];
 
-        let raw_proof = Self::placeholder_proof(2048);
+        let proof_body = keccak256(&change_commitment);
+        let raw_proof = Self::padded_proof_envelope(&proof_body, 2048);
         let snark_wrapper = if self.snark_wrapper_pk.is_some() {
-            Some(Self::placeholder_proof(256))
+            let snark_body = keccak256(&nullifiers[0]);
+            Some(Self::padded_proof_envelope(&snark_body, 256))
         } else {
             None
         };
@@ -197,7 +203,7 @@ impl ProofGenerator {
         // let domain_tag = poseidon.hash(&[chain_id_field, app_id_field]);
         // let nullifier_0 = poseidon.hash(&[inner_0, domain_tag]);
 
-        // Placeholder: keccak256-based for structural correctness
+        // Placeholder: keccak256-based (Poseidon in production with lumora_primitives)
         let domain_bytes = {
             let mut buf = [0u8; 8];
             buf[..4].copy_from_slice(&chain_id.to_be_bytes());
@@ -231,7 +237,7 @@ impl ProofGenerator {
 
     fn compute_single_commitment(note: &OutputNote) -> [u8; 32] {
         // commitment = Poseidon(recipient_pk, value, blinding)
-        // Placeholder: keccak256
+        // Placeholder: keccak256 (Poseidon in production)
         let mut input = Vec::with_capacity(80);
         input.extend_from_slice(&note.recipient_pk);
         input.extend_from_slice(&note.value.to_be_bytes());
@@ -239,26 +245,36 @@ impl ProofGenerator {
         keccak256(&input)
     }
 
-    fn placeholder_proof(size: usize) -> Vec<u8> {
-        vec![0u8; size]
+    /// Generate a padded proof envelope.
+    ///
+    /// Uses random padding so that all proof envelopes are indistinguishable
+    /// from each other, providing metadata resistance.
+    fn padded_proof_envelope(proof_bytes: &[u8], total_size: usize) -> Vec<u8> {
+        use rand::RngCore;
+        let mut envelope = Vec::with_capacity(total_size);
+        // 4-byte length prefix (big-endian)
+        let proof_len = proof_bytes.len() as u32;
+        envelope.extend_from_slice(&proof_len.to_be_bytes());
+        envelope.extend_from_slice(proof_bytes);
+        // Random padding to fixed size for metadata resistance
+        let remaining = total_size.saturating_sub(envelope.len());
+        if remaining > 0 {
+            let mut padding = vec![0u8; remaining];
+            rand::thread_rng().fill_bytes(&mut padding);
+            envelope.extend_from_slice(&padding);
+        }
+        envelope.truncate(total_size);
+        envelope
     }
 }
 
-/// Simple keccak256 (placeholder for Poseidon in production)
+/// Keccak-256 hash (cryptographic).
+///
+/// Used as a stand-in for Poseidon in non-circuit (off-chain) code.
+/// In production, replace with `lumora_primitives::poseidon::PoseidonHasher`
+/// for exact field-arithmetic alignment with the Halo2 circuit.
 fn keccak256(data: &[u8]) -> [u8; 32] {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    // NOTE: This is NOT cryptographically secure. It's a structural placeholder.
-    // In production, use lumora_primitives::poseidon::PoseidonHasher.
-    let mut hasher = DefaultHasher::new();
-    data.hash(&mut hasher);
-    let h = hasher.finish();
-    let mut out = [0u8; 32];
-    out[..8].copy_from_slice(&h.to_le_bytes());
-    // Repeat to fill 32 bytes (non-cryptographic!)
-    out[8..16].copy_from_slice(&h.to_be_bytes());
-    let h2 = h.wrapping_mul(0x517cc1b727220a95);
-    out[16..24].copy_from_slice(&h2.to_le_bytes());
-    out[24..32].copy_from_slice(&h2.to_be_bytes());
-    out
+    let mut hasher = Keccak256::new();
+    hasher.update(data);
+    hasher.finalize().into()
 }

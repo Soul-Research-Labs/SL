@@ -62,7 +62,7 @@ contract PrivacyPoolTest is Test {
         vm.startPrank(deployer);
 
         verifier = new MockVerifier();
-        epochManager = new EpochManager(EPOCH_DURATION);
+        epochManager = new EpochManager(EPOCH_DURATION, DOMAIN_CHAIN_ID);
         pool = new PrivacyPool(
             address(verifier),
             address(epochManager),

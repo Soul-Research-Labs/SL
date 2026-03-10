@@ -8,6 +8,8 @@ on:
       - "lumora-coprocessor/**"
       - "cosmwasm/**"
       - "near/**"
+      - "ink/**"
+      - "relayer/**"
       - "Cargo.toml"
       - "Cargo.lock"
   pull_request:
@@ -17,6 +19,8 @@ on:
       - "lumora-coprocessor/**"
       - "cosmwasm/**"
       - "near/**"
+      - "ink/**"
+      - "relayer/**"
 
 jobs:
   substrate-pallet:
@@ -126,3 +130,55 @@ jobs:
             -p privacy-pool-near \
             --release \
             --target wasm32-unknown-unknown
+
+  ink-contract:
+    name: ink! Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p ink-privacy-pool
+
+      - name: Clippy
+        run: cargo clippy -p ink-privacy-pool -- -D warnings
+
+      - name: Test
+        run: cargo test -p ink-privacy-pool
+
+      - name: Build Wasm
+        run: |
+          RUSTFLAGS='-C link-arg=-s' cargo build \
+            -p ink-privacy-pool \
+            --release \
+            --target wasm32-unknown-unknown
+
+  relayer:
+    name: Relayer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check -p soul-relayer
+
+      - name: Clippy
+        run: cargo clippy -p soul-relayer -- -D warnings
+
+      - name: Test
+        run: cargo test -p soul-relayer

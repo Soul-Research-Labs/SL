@@ -232,8 +232,8 @@ impl ProofSubmitter {
         output_commitments: &[[u8; 32]; 2],
     ) -> Vec<u8> {
         // transfer(bytes proof, bytes32 root, bytes32[2] nullifiers, bytes32[2] outputs)
-        // Function selector: keccak256("transfer(bytes,bytes32,bytes32[2],bytes32[2])")[:4]
-        let selector: [u8; 4] = [0x8e, 0xf1, 0x33, 0x2e]; // placeholder
+        let sig_hash = ethers::utils::keccak256(b"transfer(bytes,bytes32,bytes32[2],bytes32[2])");
+        let selector: [u8; 4] = [sig_hash[0], sig_hash[1], sig_hash[2], sig_hash[3]];
 
         let mut data = Vec::with_capacity(4 + 32 * 8 + proof.len());
         data.extend_from_slice(&selector);
@@ -271,7 +271,10 @@ impl ProofSubmitter {
         recipient: ethers::types::Address,
         exit_value: u128,
     ) -> Vec<u8> {
-        let selector: [u8; 4] = [0x2e, 0x1a, 0x7d, 0x4d]; // placeholder
+        let sig_hash = ethers::utils::keccak256(
+            b"withdraw(bytes,bytes32,bytes32[2],bytes32[2],address,uint256)",
+        );
+        let selector: [u8; 4] = [sig_hash[0], sig_hash[1], sig_hash[2], sig_hash[3]];
 
         let mut data = Vec::with_capacity(4 + 32 * 10 + proof.len());
         data.extend_from_slice(&selector);

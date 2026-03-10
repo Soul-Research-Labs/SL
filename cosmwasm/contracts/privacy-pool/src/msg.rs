@@ -19,6 +19,8 @@ pub struct InstantiateMsg {
     pub domain_app_id: u32,
     /// Governance address (can update verifier, bridge adapters)
     pub governance: String,
+    /// Accepted token denomination (e.g. "uatom", "aevmos", "uosmo")
+    pub accepted_denom: String,
 }
 
 // ── Execute ────────────────────────────────────────────────
@@ -56,6 +58,10 @@ pub enum ExecuteMsg {
     /// Update governance address
     UpdateGovernance {
         new_governance: String,
+    },
+    /// Set authorized relayer for cross-chain sync (governance only)
+    SetAuthorizedRelayer {
+        relayer: Option<String>,
     },
 }
 

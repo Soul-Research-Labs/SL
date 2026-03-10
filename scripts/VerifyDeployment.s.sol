@@ -26,7 +26,7 @@ interface IPoolVerify {
 }
 
 interface IEpochVerify {
-    function pool() external view returns (address);
+    function authorizedPools(address) external view returns (bool);
 
     function currentEpochId() external view returns (uint256);
 
@@ -76,7 +76,7 @@ contract VerifyDeployment is Script {
     uint256 passed;
     uint256 failed;
 
-    function run() external view {
+    function run() external {
         console2.log("=== Soul Privacy Stack — Post-Deploy Verification ===");
         console2.log("");
 
@@ -105,7 +105,7 @@ contract VerifyDeployment is Script {
 
     // ── Pool Checks ────────────────────────────────────
 
-    function _verifyPool() internal view {
+    function _verifyPool() internal {
         console2.log("--- PrivacyPool ---");
         IPoolVerify pool = IPoolVerify(POOL);
 
@@ -145,18 +145,18 @@ contract VerifyDeployment is Script {
 
     // ── Epoch Manager Checks ───────────────────────────
 
-    function _verifyEpochManager() internal view {
+    function _verifyEpochManager() internal {
         console2.log("--- EpochManager ---");
         IEpochVerify em = IEpochVerify(EPOCH_MANAGER);
 
-        _check("Epoch: pool linked", em.pool() == POOL);
+        _check("Epoch: pool authorized", em.authorizedPools(POOL));
         _check("Epoch: initial epoch = 0", em.currentEpochId() == 0);
         _check("Epoch: duration > 0", em.epochDuration() > 0);
     }
 
     // ── Timelock Checks ────────────────────────────────
 
-    function _verifyTimelock() internal view {
+    function _verifyTimelock() internal {
         console2.log("--- GovernanceTimelock ---");
         ITimelockVerify tl = ITimelockVerify(TIMELOCK);
 
@@ -175,7 +175,7 @@ contract VerifyDeployment is Script {
 
     // ── Verifier Checks ────────────────────────────────
 
-    function _verifyVerifier() internal view {
+    function _verifyVerifier() internal {
         console2.log("--- ProofVerifier ---");
         IVerifierCheck v = IVerifierCheck(VERIFIER);
 
@@ -193,7 +193,7 @@ contract VerifyDeployment is Script {
 
     // ── Compliance Checks ──────────────────────────────
 
-    function _verifyCompliance() internal view {
+    function _verifyCompliance() internal {
         console2.log("--- ComplianceOracle ---");
         IComplianceCheck c = IComplianceCheck(COMPLIANCE);
 
@@ -203,7 +203,7 @@ contract VerifyDeployment is Script {
 
     // ── Cross-link Checks ──────────────────────────────
 
-    function _verifyCrossLinks() internal view {
+    function _verifyCrossLinks() internal {
         if (POOL == address(0) || TIMELOCK == address(0)) return;
 
         console2.log("--- Cross-Links ---");
@@ -222,12 +222,13 @@ contract VerifyDeployment is Script {
 
     // ── Assertion Helper ───────────────────────────────
 
-    function _check(string memory label, bool condition) internal view {
-        // Note: These are view-only; using console2 for output.
-        // In a real deployment script, these would be non-view and track state.
+    function _check(string memory label, bool condition) internal {
+        checks++;
         if (condition) {
+            passed++;
             console2.log(unicode"  ✓", label);
         } else {
+            failed++;
             console2.log(unicode"  ✗ FAIL:", label);
         }
     }

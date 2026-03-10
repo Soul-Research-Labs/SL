@@ -86,6 +86,8 @@ pub struct PrivacyPool {
     remote_epoch_roots: LookupMap<String, String>,
     /// Governance account
     governance: AccountId,
+    /// Authorized relayer/bridge for cross-chain sync
+    authorized_relayer: Option<AccountId>,
     /// Domain chain ID for nullifier separation
     domain_chain_id: u32,
     /// Domain app ID
@@ -141,6 +143,7 @@ impl PrivacyPool {
             epoch_nullifiers,
             remote_epoch_roots: LookupMap::new(b"rr"),
             governance,
+            authorized_relayer: None,
             domain_chain_id,
             domain_app_id,
         }
@@ -252,8 +255,23 @@ impl PrivacyPool {
 
     // ── Epoch Management ───────────────────────────────
 
-    /// Finalize the current epoch.
+    /// Set the authorized relayer account for cross-chain sync.
+    pub fn set_authorized_relayer(&mut self, relayer: Option<AccountId>) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.governance,
+            "Only governance can set relayer"
+        );
+        self.authorized_relayer = relayer;
+    }
+
+    /// Finalize the current epoch. Only callable by governance.
     pub fn finalize_epoch(&mut self) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.governance,
+            "Only governance can finalize epoch"
+        );
         let epoch_id = self.current_epoch_id;
         let mut epoch = self.epochs.get(&epoch_id).expect("Epoch not found");
         assert!(!epoch.finalized, "Epoch already finalized");
@@ -293,13 +311,22 @@ impl PrivacyPool {
         ));
     }
 
-    /// Receive epoch root from remote chain.
+    /// Receive epoch root from remote chain. Only callable by governance or authorized relayer.
     pub fn sync_epoch_root(
         &mut self,
         source_chain_id: u32,
         epoch_id: u64,
         nullifier_root: String,
     ) {
+        let caller = env::predecessor_account_id();
+        let is_authorized = caller == self.governance
+            || self
+                .authorized_relayer
+                .as_ref()
+                .map_or(false, |r| &caller == r);
+        assert!(is_authorized, "Only governance or authorized relayer can sync epoch roots");
+        assert!(!nullifier_root.is_empty(), "Nullifier root cannot be empty");
+
         let key = format!("{}:{}", source_chain_id, epoch_id);
         self.remote_epoch_roots.insert(&key, &nullifier_root);
 
@@ -431,18 +458,40 @@ impl PrivacyPool {
 
 // ── Free Functions ─────────────────────────────────────
 
-/// Placeholder proof verification — TESTNET ONLY.
+/// Proof verification — TESTNET ONLY.
+///
+/// Performs structural validation of the proof envelope. In production,
+/// this should call a co-deployed ZK verifier contract or use a NEAR
+/// precompile for Groth16/Halo2 verification.
+///
+/// # Structural checks performed:
+/// - Proof length >= 256 bytes (minimum for a serialized Groth16 proof)
+/// - No duplicate nullifiers (double-spend prevention)
+/// - All output commitments are non-zero
+/// - Merkle root is non-zero
 fn verify_proof_placeholder(
     proof: &str,
-    _merkle_root: &str,
+    merkle_root: &str,
     nullifiers: &[String],
-    _output_commitments: &[String],
+    output_commitments: &[String],
 ) -> bool {
-    if proof.len() < 64 {
+    // Minimum proof size for a serialized Groth16 proof (3 G1 points)
+    if proof.len() < 256 {
         return false;
     }
+    // No duplicate nullifiers
     if nullifiers.len() >= 2 && nullifiers[0] == nullifiers[1] {
         return false;
+    }
+    // Non-zero root
+    if merkle_root.is_empty() || merkle_root.chars().all(|c| c == '0') {
+        return false;
+    }
+    // Non-zero output commitments
+    for cm in output_commitments {
+        if cm.is_empty() || cm.chars().all(|c| c == '0') {
+            return false;
+        }
     }
     true
 }

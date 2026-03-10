@@ -56,6 +56,10 @@ pub struct Config {
     pub domain_chain_id: u32,
     pub domain_app_id: u32,
     pub governance: String,
+    /// Accepted token denom for deposits/withdrawals (e.g. "uatom", "aevmos", "uosmo")
+    pub accepted_denom: String,
+    /// Authorized relayer for cross-chain epoch root sync (None = governance only)
+    pub authorized_relayer: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

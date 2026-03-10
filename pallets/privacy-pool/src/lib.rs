@@ -53,10 +53,11 @@ pub mod pallet {
     use frame_support::{
         pallet_prelude::*,
         traits::{Currency, ExistenceRequirement, ReservableCurrency},
+        PalletId,
     };
     use frame_system::pallet_prelude::*;
     use sp_core::H256;
-    use sp_runtime::traits::{Hash, Zero};
+    use sp_runtime::traits::{AccountIdConversion, Hash, Zero};
     use sp_std::vec::Vec;
 
     use crate::types::*;
@@ -95,6 +96,10 @@ pub mod pallet {
         /// Application ID for domain separation
         #[pallet::constant]
         type AppId: Get<u32>;
+
+        /// Pallet ID used to derive the treasury account that holds pool funds
+        #[pallet::constant]
+        type PalletId: Get<PalletId>;
 
         /// Weight information for extrinsics
         type WeightInfo: WeightInfo;
@@ -253,6 +258,10 @@ pub mod pallet {
         EpochNullifierOverflow,
         /// Transfer to recipient failed
         TransferFailed,
+        /// Origin not authorized (requires root/governance)
+        NotAuthorized,
+        /// Invalid nullifier root (zero not accepted)
+        InvalidNullifierRoot,
     }
 
     // ── Genesis ────────────────────────────────────────────────────
@@ -315,9 +324,10 @@ pub mod pallet {
                 Error::<T>::CommitmentAlreadyExists
             );
 
-            // Transfer tokens from caller to pool (reserve)
+            // Transfer tokens from caller to pool treasury account
             let balance_amount: <<T as pallet::Config>::Currency as Currency<T::AccountId>>::Balance = amount.into();
-            T::Currency::reserve(&who, balance_amount)
+            let pool_account = T::PalletId::get().into_account_truncating();
+            T::Currency::transfer(&who, &pool_account, balance_amount, ExistenceRequirement::KeepAlive)
                 .map_err(|_| Error::<T>::TransferFailed)?;
 
             // Mark commitment as existing
@@ -446,10 +456,12 @@ pub mod pallet {
             let _ = Self::insert_leaf(output_commitments[1])?;
             let new_root = Self::get_latest_root();
 
-            // Transfer tokens from pool to recipient
+            // Transfer tokens from pool treasury account to recipient
             PoolBalance::<T>::mutate(|b| *b = b.saturating_sub(exit_value));
             let balance_amount: <<T as pallet::Config>::Currency as Currency<T::AccountId>>::Balance = exit_value.into();
-            T::Currency::unreserve(&recipient, balance_amount);
+            let pool_account: T::AccountId = T::PalletId::get().into_account_truncating();
+            T::Currency::transfer(&pool_account, &recipient, balance_amount, ExistenceRequirement::AllowDeath)
+                .map_err(|_| Error::<T>::TransferFailed)?;
 
             Self::deposit_event(Event::Withdrawn {
                 nullifier_1: nullifiers[0],
@@ -463,10 +475,11 @@ pub mod pallet {
         }
 
         /// Finalize the current epoch, computing its nullifier Merkle root.
+        /// Restricted to root origin (governance / sudo).
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::finalize_epoch())]
         pub fn finalize_epoch(origin: OriginFor<T>) -> DispatchResult {
-            ensure_signed(origin)?;
+            ensure_root(origin)?;
             let epoch_id = CurrentEpochId::<T>::get();
 
             let mut epoch = Epochs::<T>::get(epoch_id).ok_or(Error::<T>::EpochNotReady)?;
@@ -505,6 +518,7 @@ pub mod pallet {
         }
 
         /// Receive an epoch nullifier root from a remote parachain (via XCM).
+        /// Restricted to root origin (governance / sudo / XCM sovereign).
         #[pallet::call_index(4)]
         #[pallet::weight(T::WeightInfo::sync_epoch_root())]
         pub fn sync_epoch_root(
@@ -513,9 +527,8 @@ pub mod pallet {
             epoch_id: u64,
             nullifier_root: H256,
         ) -> DispatchResult {
-            // In production, this should be restricted to XCM origin
-            // For now, any signed origin can submit (governance controlled)
-            ensure_signed(origin)?;
+            ensure_root(origin)?;
+            ensure!(nullifier_root != H256::zero(), Error::<T>::InvalidNullifierRoot);
 
             RemoteEpochRoots::<T>::insert(source_para_id, epoch_id, nullifier_root);
 

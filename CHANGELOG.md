@@ -2,6 +2,77 @@
 
 All notable changes to the **Soul Privacy Stack** — a multi-chain ZK privacy middleware derived from ZAseon and Lumora — will be documented in this file.
 
+## [0.7.0] - 2026-07-XX — Security Hardening & Access Control Audit
+
+### Security Fixes (P0 — Critical)
+
+- **CosmWasm hash function** — Replaced completely broken XOR byte-folding mock with proper `sha2::Sha256` cryptographic hash; added `hex` and `sha2` crate dependencies
+- **NEAR access control** — Added governance-only guard to `finalize_epoch()`, governance-or-authorized-relayer guard to `sync_epoch_root()` with null root rejection; added `authorized_relayer` field and `set_authorized_relayer()` governance function
+- **CosmWasm access control** — Added governance-only guard to `finalize_epoch()`, governance-or-authorized-relayer guard to `sync_epoch_root()` with empty root validation; added `SetAuthorizedRelayer` execute message and handler
+- **Substrate withdraw accounting** — Replaced broken `T::Currency::unreserve(&recipient)` (which tried to unreserve non-existent reserved balance) with proper `PalletId`-based treasury account: deposits transfer to pool account, withdrawals transfer from pool account to recipient
+- **Substrate access control** — `finalize_epoch()` and `sync_epoch_root()` now require `ensure_root` (sudo/governance) origin instead of any signed origin; `sync_epoch_root()` rejects zero nullifier roots
+- **NEAR verify strengthening** — Increased minimum proof length from 64 to 256 bytes, added non-zero root and output commitment validation
+- **PrivacyPool receive()** — Changed from empty `receive()` (silently accepted untracked ETH) to `revert InvalidDeposit()` — all deposits must go through `deposit()`
+
+### Security Fixes (P1 — High)
+
+- **SDK ABI mismatch** — Added missing `amount` parameter to deposit ABI and `_domainChainId`/`_domainAppId` parameters to transfer ABI, matching actual Solidity contract signatures
+- **Halo2SnarkVerifier VK immutability** — Added `VKAlreadyInitialized` error and guards to `initTransferVK()`, `initWithdrawVK()`, and `initAggregationVK()` preventing re-initialization of verification keys after initial setup
+- **Subgraph config** — Added `address` fields (placeholder) to all data sources and changed `startBlock` from 0 to 1 with deployment instructions
+
+### Security Fixes (P2 — Medium)
+
+- **CosmWasm hardcoded denom** — Replaced hardcoded "uatom" deposit/withdraw denomination with configurable `accepted_denom` field in Config, set during contract instantiation
+- **Router self-loops** — Removed IBC self-loop (`evmos-testnet` → `evmos-testnet`) and Rainbow self-loop (`aurora-testnet` → `aurora-testnet`) from bridge topology
+- **Router key mismatch** — Changed all bridge topology keys from hyphens (`avalanche-fuji`) to underscores (`avalanche_fuji`) matching the `ALL_CHAINS` registry
+- **Aggregator weak randomness** — Replaced `SystemTime::subsec_nanos()`-based jitter (predictable, identical for consecutive calls) with `rand::thread_rng().gen_range()` using the `rand` crate
+- **Docker Grafana password** — Changed default password from `changeme` to mandatory `${GRAFANA_PASSWORD:?}` requiring explicit env var
+
+### Testing
+
+- **RelayerFeeVault.t.sol** — 18 Foundry tests: relayer registration (register, insufficient stake, already-registered, deregister, deregister-with-pending), fee deposits (deposit, zero, receive), relay credit (credit, duplicate hash, unregistered, insufficient vault, governance-only), fee claims (claim, nothing-to-claim), governance (setFeePerRelay, exceeds-max, slash, full-slash-deregisters, transfer-governance, zero-address), view functions
+- **StealthAnnouncer.t.sol** — 12 Foundry tests: meta-address registration (register, invalid parities, update, unregistered-revert), announcement publishing (single, multiple), range queries (range, beyond-end, empty)
+
+### Infrastructure
+
+- **Substrate `PalletId`** — New `Config` associated type for treasury account derivation; added to test mock as `prv/pool`
+
+## [0.6.0] - 2026-06-XX — Hardening, Crypto Fixes & Test Coverage
+
+### Bug Fixes
+
+- **VerifyDeployment.s.sol** — Fixed `view` modifier on `run()` and all internal functions that prevented counter state mutations; fixed `IEpochVerify.pool()` → `authorizedPools(address)` to match actual EpochManager interface
+- **ink! privacy-pool withdraw** — Fixed single-nullifier withdraw to use `[[u8; 32]; 2]` (2 nullifiers + 2 output commitments), aligning with Solidity/CosmWasm/NEAR protocol
+- **PrivacyPool.t.sol** — Fixed EpochManager constructor call (was missing `DOMAIN_CHAIN_ID` second parameter)
+- **Submitter ABI selectors** — Replaced hardcoded placeholder selectors with `ethers::utils::keccak256()`-computed values for `transfer()` and `withdraw()`
+
+### Security Improvements
+
+- **lumora proof.rs** — Replaced `DefaultHasher`-based non-cryptographic hash with `sha3::Keccak256` for all off-chain nullifier/commitment computations; replaced zero-filled proof envelopes with random-padded envelopes for metadata resistance (`padded_proof_envelope()`)
+- **ComplianceOracle viewing-key verifier** — Added `viewingKeyVerifier` address + `setViewingKeyVerifier()` governance function; proper ZK proof verification via `staticcall` to verifier contract (proof = `[32-byte auditorPubKeyHash][zkProof]`); fallback to accept-non-empty only when no verifier is set (testnet mode)
+
+### Circuit Completion
+
+- **Halo2 TransferCircuit** — Added full 32-level Merkle path verification for both inputs (with conditional swap via path bits), V2 domain-separated nullifier derivation (`Poseidon(Poseidon(sk, cm), Poseidon(chain_id, app_id))`), output note 1 commitment computation, instance column exposure for `[merkle_root, nullifier_0, nullifier_1, out_commitment_0, out_commitment_1]`
+- **Halo2 WithdrawCircuit** — Added Merkle path verification, V2 nullifier derivation, change note commitment, instance column exposure for `[merkle_root, nullifier, withdraw_value, change_commitment]`
+
+### New Modules
+
+- **Relayer Dispatcher** (`relayer/src/dispatcher.rs`) — Full relay command executor with `ethers-rs` transaction submission; ABI encoding for `receiveRemoteRoot()`, `sendMessage()`, `submitEpochRoot()` with keccak256-computed function selectors
+
+### Testing
+
+- **EpochManager.t.sol** — 20 Foundry tests: constructor initialization, nullifier registration (authorized/unauthorized/multiple), epoch lifecycle (startNewEpoch auto-finalize, before-duration revert, direct finalize, double-finalize revert, empty/single/multi root), cross-chain sync (receiveRemoteEpochRoot, unauthorized/zero-root reverts), global nullifier check, governance (authorize/revoke pool/bridge, setGovernance, unauthorized revert)
+- **UniversalNullifierRegistry.t.sol** — 20 Foundry tests: chain registration (register/duplicate/unauthorized/deactivate/inactive/updateAdapter), epoch root submission (submit/unauthorized/duplicate/sequential/inactive/governance-submit), global snapshot (empty/single/multi-chain), nullifier reporting (single-element proof, duplicate/invalid/unregistered reverts), view helpers
+- **Libraries.t.sol** — Unit tests for PoseidonHasher (determinism, non-commutativity, field-boundedness, modular reduction, hashSingle), DomainNullifier (V1/V2 computation, domain/app separation, verifyV2, V1≠V2 divergence), MerkleTree (init root, insert, sequential indices, isKnownRoot history, determinism), TransientStorage (reentrancy guard, uint/address/bytes32/bool store/load)
+
+### Build & CI
+
+- **rust.yml** — Added `ink-privacy-pool` and `soul-relayer` CI jobs (fmt, clippy, test, wasm build); added `ink/**` and `relayer/**` to trigger paths
+- **BridgeAdapters.conf** — New Certora config for bridge adapter formal verification
+- **Makefile** — `verify-bridges`, `test-sol-epochmanager`, `test-sol-registry`, `test-sol-libraries` targets; `verify-all` now covers 6 specs
+- **lumora-coprocessor Cargo.toml** — Added `sha3` and `rand` dependencies
+
 ## [0.5.0] - 2026-05-XX — Compliance, Verification & Documentation
 
 ### Core Integration

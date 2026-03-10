@@ -66,6 +66,7 @@ contract Halo2SnarkVerifier is IProofVerifier {
 
     error Unauthorized();
     error VKNotInitialized();
+    error VKAlreadyInitialized();
     error InvalidProofLength();
     error PairingFailed();
 
@@ -131,6 +132,7 @@ contract Halo2SnarkVerifier is IProofVerifier {
         uint256[2] calldata delta_y,
         uint256[][] calldata ic
     ) external onlyGovernance {
+        if (transferVKReady) revert VKAlreadyInitialized();
         _transferVK = VerifyingKey({
             alpha_x: alpha_x,
             alpha_y: alpha_y,
@@ -157,6 +159,7 @@ contract Halo2SnarkVerifier is IProofVerifier {
         uint256[2] calldata delta_y,
         uint256[][] calldata ic
     ) external onlyGovernance {
+        if (withdrawVKReady) revert VKAlreadyInitialized();
         _withdrawVK = VerifyingKey({
             alpha_x: alpha_x,
             alpha_y: alpha_y,
@@ -183,6 +186,7 @@ contract Halo2SnarkVerifier is IProofVerifier {
         uint256[2] calldata delta_y,
         uint256[][] calldata ic
     ) external onlyGovernance {
+        if (aggregationVKReady) revert VKAlreadyInitialized();
         _aggregationVK = VerifyingKey({
             alpha_x: alpha_x,
             alpha_y: alpha_y,

@@ -34,6 +34,9 @@ contract ComplianceOracle is IComplianceOracle {
     /// @notice Maximum transaction value before enhanced due diligence (0 = no limit).
     uint256 public enhancedDueDiligenceThreshold;
 
+    /// @notice ZK verifier for viewing-key disclosure proofs (address(0) = accept non-empty proofs).
+    address public viewingKeyVerifier;
+
     // ── Events ─────────────────────────────────────────
 
     event AddressBlocked(address indexed account, string reason);
@@ -43,6 +46,7 @@ contract ComplianceOracle is IComplianceOracle {
     event AuditorRemoved(address indexed auditor);
     event PolicyUpdated(uint256 newVersion);
     event ComplianceToggled(bool enabled);
+    event ViewingKeyVerifierUpdated(address indexed verifier);
 
     // ── Modifiers ──────────────────────────────────────
 
@@ -94,13 +98,52 @@ contract ComplianceOracle is IComplianceOracle {
             }
         }
 
-        // If a viewing-key proof is provided, it must be non-empty.
-        // In production, this would verify a ZK proof that the transaction
-        // details satisfy AML/KYC requirements without revealing them.
+        // If a viewing-key proof is provided, verify it.
         if (viewingKeyProof.length > 0) {
-            // Proof structure: first 32 bytes = auditor's viewing key hash
-            // The remainder is a ZK proof that the auditor can decrypt the note.
-            // For now, accept any non-empty proof as valid (placeholder).
+            if (viewingKeyVerifier != address(0)) {
+                // Proof structure: [32 bytes auditorPubKeyHash][remainder = zkProof]
+                // The ZK proof demonstrates that an authorized auditor can decrypt
+                // the note details (value, recipient) without revealing them on-chain.
+                // The verifier checks:
+                //   1. auditorPubKeyHash matches a registered auditor
+                //   2. The SNARK/STARK proof is valid for the public inputs
+                //      (nullifiers, outputCommitments, auditorPubKeyHash)
+                require(
+                    viewingKeyProof.length >= 33,
+                    "ComplianceOracle: proof too short"
+                );
+
+                bytes32 auditorKeyHash = bytes32(viewingKeyProof[:32]);
+                bytes memory zkProof = viewingKeyProof[32:];
+
+                // Build public inputs: [nullifiers[0], nullifiers[1], outputs[0], outputs[1], auditorKeyHash]
+                bytes memory publicInputs = abi.encodePacked(
+                    nullifiers[0],
+                    nullifiers[1],
+                    outputCommitments[0],
+                    outputCommitments[1],
+                    auditorKeyHash
+                );
+
+                // Call the viewing-key verifier: verify(bytes proof, bytes publicInputs) -> bool
+                (bool success, bytes memory result) = viewingKeyVerifier
+                    .staticcall(
+                        abi.encodeWithSignature(
+                            "verify(bytes,bytes)",
+                            zkProof,
+                            publicInputs
+                        )
+                    );
+
+                if (!success || result.length < 32) {
+                    return false;
+                }
+
+                bool verified = abi.decode(result, (bool));
+                return verified;
+            }
+
+            // No verifier set — accept non-empty proof (testnet/development mode).
             return true;
         }
 
@@ -185,5 +228,12 @@ contract ComplianceOracle is IComplianceOracle {
     function transferGovernance(address newGovernance) external onlyGovernance {
         require(newGovernance != address(0), "ComplianceOracle: zero address");
         governance = newGovernance;
+    }
+
+    /// @notice Set the viewing-key ZK proof verifier contract.
+    /// @param verifier The verifier address (address(0) disables ZK verification).
+    function setViewingKeyVerifier(address verifier) external onlyGovernance {
+        viewingKeyVerifier = verifier;
+        emit ViewingKeyVerifierUpdated(verifier);
     }
 }

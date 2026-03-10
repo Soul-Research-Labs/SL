@@ -48,6 +48,15 @@ test-sol-invariant:
 test-sol-multisig:
 	forge test --match-contract MultiSigGovernanceTest -vvv
 
+test-sol-epochmanager:
+	forge test --match-contract EpochManagerTest -vvv
+
+test-sol-registry:
+	forge test --match-contract UniversalNullifierRegistryTest -vvv
+
+test-sol-libraries:
+	forge test --match-path test/Libraries.t.sol -vvv
+
 lint-sol:
 	forge fmt --check
 
@@ -165,7 +174,10 @@ verify-timelock:
 verify-compliance:
 	certoraRun certora/conf/ComplianceOracle.conf
 
-verify-all: verify-pool verify-registry verify-multisig verify-timelock verify-compliance
+verify-bridges:
+	certoraRun certora/conf/BridgeAdapters.conf
+
+verify-all: verify-pool verify-registry verify-multisig verify-timelock verify-compliance verify-bridges
 
 # ── Help ──────────────────────────────────────
 
@@ -214,4 +226,5 @@ help:
 	@echo "  verify-multisig  Certora: verify MultiSigGovernance"
 	@echo "  verify-timelock  Certora: verify GovernanceTimelock"
 	@echo "  verify-compliance Certora: verify ComplianceOracle"
+	@echo "  verify-bridges   Certora: verify BridgeAdapters"
 	@echo "  verify-all       Run all Certora specs"

@@ -10,7 +10,8 @@ dataSources:
     network: avalanche
     source:
       abi: PrivacyPool
-      startBlock: 0 # Set to actual deployment block
+      address: "0x0000000000000000000000000000000000000000" # Replace with deployed address
+      startBlock: 1 # Replace with deployment block number
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -42,7 +43,8 @@ dataSources:
     network: avalanche
     source:
       abi: EpochManager
-      startBlock: 0
+      address: "0x0000000000000000000000000000000000000000" # Replace with deployed address
+      startBlock: 1 # Replace with deployment block number
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -65,7 +67,8 @@ dataSources:
     network: avalanche
     source:
       abi: GovernanceTimelock
-      startBlock: 0
+      address: "0x0000000000000000000000000000000000000000" # Replace with deployed address
+      startBlock: 1 # Replace with deployment block number
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

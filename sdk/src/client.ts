@@ -21,7 +21,10 @@ const PRIVACY_POOL_ABI = [
     name: "deposit",
     type: "function",
     stateMutability: "payable",
-    inputs: [{ name: "commitment", type: "bytes32" }],
+    inputs: [
+      { name: "commitment", type: "bytes32" },
+      { name: "amount", type: "uint256" },
+    ],
     outputs: [],
   },
   {
@@ -33,6 +36,8 @@ const PRIVACY_POOL_ABI = [
       { name: "merkleRoot", type: "bytes32" },
       { name: "nullifiers", type: "bytes32[2]" },
       { name: "outputCommitments", type: "bytes32[2]" },
+      { name: "_domainChainId", type: "uint256" },
+      { name: "_domainAppId", type: "uint256" },
     ],
     outputs: [],
   },
@@ -261,7 +266,7 @@ export class SoulPrivacyClient {
       address: this.chainConfig.contracts.privacyPool as Address,
       abi: PRIVACY_POOL_ABI,
       functionName: "deposit",
-      args: [commitment],
+      args: [commitment, amount],
       value: amount,
     });
 
@@ -273,6 +278,8 @@ export class SoulPrivacyClient {
     merkleRoot: Hex,
     nullifiers: [Hex, Hex],
     outputCommitments: [Hex, Hex],
+    domainChainId?: bigint,
+    domainAppId?: bigint,
   ): Promise<Hash> {
     if (!this.walletClient)
       throw new Error("Wallet client required for transactions");
@@ -281,7 +288,14 @@ export class SoulPrivacyClient {
       address: this.chainConfig.contracts.privacyPool as Address,
       abi: PRIVACY_POOL_ABI,
       functionName: "transfer",
-      args: [proof, merkleRoot, nullifiers, outputCommitments],
+      args: [
+        proof,
+        merkleRoot,
+        nullifiers,
+        outputCommitments,
+        domainChainId ?? BigInt(this.chainConfig.chainId),
+        domainAppId ?? 1n,
+      ],
     });
   }
 

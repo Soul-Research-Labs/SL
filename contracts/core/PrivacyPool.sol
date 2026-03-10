@@ -324,6 +324,8 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
         return inputs;
     }
 
-    /// @notice Receive ETH/native tokens
-    receive() external payable {}
+    /// @notice Reject direct ETH transfers — all deposits must go through deposit()
+    receive() external payable {
+        revert InvalidDeposit();
+    }
 }

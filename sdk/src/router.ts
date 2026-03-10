@@ -22,22 +22,22 @@ export interface BridgeEdge {
 export const BRIDGE_TOPOLOGY: BridgeEdge[] = [
   // Avalanche internal
   {
-    source: "avalanche-fuji",
-    destination: "avalanche-fuji-subnet",
+    source: "avalanche_fuji",
+    destination: "avalanche_fuji_subnet",
     protocol: "AWM",
     estimatedLatency: 5,
     active: true,
   },
   {
-    source: "avalanche-fuji-subnet",
-    destination: "avalanche-fuji",
+    source: "avalanche_fuji_subnet",
+    destination: "avalanche_fuji",
     protocol: "AWM",
     estimatedLatency: 5,
     active: true,
   },
   {
-    source: "avalanche-fuji",
-    destination: "avalanche-fuji-subnet",
+    source: "avalanche_fuji",
+    destination: "avalanche_fuji_subnet",
     protocol: "Teleporter",
     estimatedLatency: 10,
     active: true,
@@ -45,63 +45,51 @@ export const BRIDGE_TOPOLOGY: BridgeEdge[] = [
 
   // Polkadot parachains (XCM)
   {
-    source: "moonbase-alpha",
-    destination: "shibuya",
+    source: "moonbase_alpha",
+    destination: "astar_shibuya",
     protocol: "XCM",
     estimatedLatency: 24,
     active: true,
   },
   {
-    source: "shibuya",
-    destination: "moonbase-alpha",
+    source: "astar_shibuya",
+    destination: "moonbase_alpha",
     protocol: "XCM",
     estimatedLatency: 24,
     active: true,
   },
 
-  // Cosmos (IBC)
-  {
-    source: "evmos-testnet",
-    destination: "evmos-testnet",
-    protocol: "IBC",
-    estimatedLatency: 15,
-    active: true,
-  },
+  // Cosmos (IBC) — Evmos ↔ Osmosis (placeholder for future multi-chain IBC)
+  // No self-loop; IBC routes added when a second Cosmos chain is registered
 
-  // Near/Aurora (Rainbow Bridge)
-  {
-    source: "aurora-testnet",
-    destination: "aurora-testnet",
-    protocol: "Rainbow",
-    estimatedLatency: 30,
-    active: true,
-  },
+  // Near/Aurora ↔ NEAR mainnet (placeholder; Rainbow is Aurora→Ethereum)
+  // No self-loop; add actual cross-chain route when second chain is available
 
   // Cross-ecosystem via hub (Avalanche ↔ Moonbeam via relayer)
   {
-    source: "avalanche-fuji",
-    destination: "moonbase-alpha",
+    source: "avalanche_fuji",
+    destination: "moonbase_alpha",
     protocol: "AWM",
     estimatedLatency: 60,
     active: true,
   },
   {
-    source: "moonbase-alpha",
-    destination: "avalanche-fuji",
+    source: "moonbase_alpha",
+    destination: "avalanche_fuji",
     protocol: "XCM",
     estimatedLatency: 60,
     active: true,
   },
   {
-    source: "avalanche-fuji",
-    destination: "evmos-testnet",
+    source: "avalanche_fuji",
+    destination: "evmos_testnet",
     protocol: "AWM",
     estimatedLatency: 60,
     active: true,
   },
   {
-    source: "avalanche-fuji",
-    destination: "aurora-testnet",
+    source: "avalanche_fuji",
+    destination: "aurora_testnet",
     protocol: "AWM",
     estimatedLatency: 60,
     active: true,

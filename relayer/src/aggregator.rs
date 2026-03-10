@@ -141,11 +141,6 @@ async fn dispatch_event(
 
 /// Generate a random jitter value in [0, max_ms)
 fn rand_jitter(max_ms: u64) -> u64 {
-    // Use a simple non-cryptographic source for timing jitter
-    // (not security-critical — this is for traffic analysis resistance)
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos() as u64;
-    seed % max_ms
+    use rand::Rng;
+    rand::thread_rng().gen_range(0..max_ms)
 }

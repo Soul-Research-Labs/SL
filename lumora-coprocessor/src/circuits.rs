@@ -340,7 +340,7 @@ impl Circuit<Fp> for TransferCircuit {
         // Compute input commitment 0 = Poseidon(Poseidon(secret, nonce), value)
         let in_inner_0 =
             poseidon_chip.hash(layouter.namespace(|| "in_inner_0"), &in_secret_0, &in_nonce_0)?;
-        let _in_commitment_0 =
+        let in_commitment_0 =
             poseidon_chip.hash(layouter.namespace(|| "in_cm_0"), &in_inner_0, &in_value_0)?;
 
         // Assign input note 1
@@ -371,7 +371,7 @@ impl Circuit<Fp> for TransferCircuit {
 
         let in_inner_1 =
             poseidon_chip.hash(layouter.namespace(|| "in_inner_1"), &in_secret_1, &in_nonce_1)?;
-        let _in_commitment_1 =
+        let in_commitment_1 =
             poseidon_chip.hash(layouter.namespace(|| "in_cm_1"), &in_inner_1, &in_value_1)?;
 
         // ── Output commitments ─────────────────────────────────
@@ -402,25 +402,198 @@ impl Circuit<Fp> for TransferCircuit {
 
         let out_inner_0 =
             poseidon_chip.hash(layouter.namespace(|| "out_inner_0"), &out_secret_0, &out_nonce_0)?;
-        let _out_commitment_0 =
+        let out_commitment_0 =
             poseidon_chip.hash(layouter.namespace(|| "out_cm_0"), &out_inner_0, &out_value_0)?;
 
         // ── Value conservation check ───────────────────────────
-        layouter.assign_region(
+        let out_value_1_cell = layouter.assign_region(
             || "value conservation",
             |mut region| {
                 config.s_value_check.enable(&mut region, 0)?;
                 in_value_0.copy_advice(|| "in_0", &mut region, config.advice[0], 0)?;
                 in_value_1.copy_advice(|| "in_1", &mut region, config.advice[1], 0)?;
                 out_value_0.copy_advice(|| "out_0", &mut region, config.advice[2], 0)?;
-                // out_value_1 assigned inline
-                region.assign_advice(|| "out_1", config.advice[3], 0, || self.out_value_1)?;
-                Ok(())
+                let out_1 = region.assign_advice(|| "out_1", config.advice[3], 0, || self.out_value_1)?;
+                Ok(out_1)
             },
         )?;
 
-        // Public inputs are exposed via the instance column:
-        // [0] = merkle_root, [1] = nul_0, [2] = nul_1, [3] = out_cm_0, [4] = out_cm_1
+        // ── Output commitment 1 ────────────────────────────────
+        let (out_secret_1, out_nonce_1) = layouter.assign_region(
+            || "output note 1",
+            |mut region| {
+                let s = region.assign_advice(
+                    || "out_secret_1",
+                    config.advice[0],
+                    0,
+                    || self.out_secret_1,
+                )?;
+                let n = region.assign_advice(
+                    || "out_nonce_1",
+                    config.advice[1],
+                    0,
+                    || self.out_nonce_1,
+                )?;
+                Ok((s, n))
+            },
+        )?;
+
+        let out_inner_1 =
+            poseidon_chip.hash(layouter.namespace(|| "out_inner_1"), &out_secret_1, &out_nonce_1)?;
+        let out_commitment_1 =
+            poseidon_chip.hash(layouter.namespace(|| "out_cm_1"), &out_inner_1, &out_value_1_cell)?;
+
+        // ── Domain separation (chain_id, app_id) ───────────────
+        let (chain_id_cell, app_id_cell) = layouter.assign_region(
+            || "domain params",
+            |mut region| {
+                let cid = region.assign_advice(
+                    || "chain_id",
+                    config.advice[0],
+                    0,
+                    || self.chain_id,
+                )?;
+                let aid = region.assign_advice(
+                    || "app_id",
+                    config.advice[1],
+                    0,
+                    || self.app_id,
+                )?;
+                Ok((cid, aid))
+            },
+        )?;
+        let domain_hash =
+            poseidon_chip.hash(layouter.namespace(|| "domain_hash"), &chain_id_cell, &app_id_cell)?;
+
+        // ── Nullifier derivation (V2 domain-separated) ─────────
+        // nullifier = Poseidon(Poseidon(secret, commitment), Poseidon(chain_id, app_id))
+        let nul_inner_0 =
+            poseidon_chip.hash(layouter.namespace(|| "nul_inner_0"), &in_secret_0, &in_commitment_0)?;
+        let nullifier_0 =
+            poseidon_chip.hash(layouter.namespace(|| "nullifier_0"), &nul_inner_0, &domain_hash)?;
+
+        let nul_inner_1 =
+            poseidon_chip.hash(layouter.namespace(|| "nul_inner_1"), &in_secret_1, &in_commitment_1)?;
+        let nullifier_1 =
+            poseidon_chip.hash(layouter.namespace(|| "nullifier_1"), &nul_inner_1, &domain_hash)?;
+
+        // ── Merkle path verification for input 0 ───────────────
+        let merkle_root_0 = {
+            let mut current = in_commitment_0.clone();
+            for i in 0..TREE_DEPTH {
+                let (path_elem, path_bit) = layouter.assign_region(
+                    || format!("merkle_0_level_{}", i),
+                    |mut region| {
+                        config.merkle.s_merkle.enable(&mut region, 0)?;
+                        let elem = region.assign_advice(
+                            || "sibling",
+                            config.advice[0],
+                            0,
+                            || self.in_path_0[i],
+                        )?;
+                        let bit = region.assign_advice(
+                            || "bit",
+                            config.merkle.path_bits,
+                            0,
+                            || self.in_bits_0[i],
+                        )?;
+                        Ok((elem, bit))
+                    },
+                )?;
+                // If bit == 0: hash(current, sibling), else hash(sibling, current)
+                // We compute both and select; in practice this is a conditional swap
+                let hash_lr =
+                    poseidon_chip.hash(layouter.namespace(|| format!("m0_lr_{}", i)), &current, &path_elem)?;
+                let hash_rl =
+                    poseidon_chip.hash(layouter.namespace(|| format!("m0_rl_{}", i)), &path_elem, &current)?;
+
+                // Select: result = bit * hash_rl + (1-bit) * hash_lr
+                current = layouter.assign_region(
+                    || format!("merkle_0_select_{}", i),
+                    |mut region| {
+                        let result = region.assign_advice(
+                            || "selected hash",
+                            config.advice[0],
+                            0,
+                            || {
+                                path_bit.value().copied().and_then(|b| {
+                                    if b == Fp::zero() {
+                                        hash_lr.value().copied()
+                                    } else {
+                                        hash_rl.value().copied()
+                                    }
+                                })
+                            },
+                        )?;
+                        Ok(result)
+                    },
+                )?;
+            }
+            current
+        };
+
+        // ── Merkle path verification for input 1 ───────────────
+        let merkle_root_1 = {
+            let mut current = in_commitment_1.clone();
+            for i in 0..TREE_DEPTH {
+                let (path_elem, path_bit) = layouter.assign_region(
+                    || format!("merkle_1_level_{}", i),
+                    |mut region| {
+                        config.merkle.s_merkle.enable(&mut region, 0)?;
+                        let elem = region.assign_advice(
+                            || "sibling",
+                            config.advice[0],
+                            0,
+                            || self.in_path_1[i],
+                        )?;
+                        let bit = region.assign_advice(
+                            || "bit",
+                            config.merkle.path_bits,
+                            0,
+                            || self.in_bits_1[i],
+                        )?;
+                        Ok((elem, bit))
+                    },
+                )?;
+                let hash_lr =
+                    poseidon_chip.hash(layouter.namespace(|| format!("m1_lr_{}", i)), &current, &path_elem)?;
+                let hash_rl =
+                    poseidon_chip.hash(layouter.namespace(|| format!("m1_rl_{}", i)), &path_elem, &current)?;
+
+                current = layouter.assign_region(
+                    || format!("merkle_1_select_{}", i),
+                    |mut region| {
+                        let result = region.assign_advice(
+                            || "selected hash",
+                            config.advice[0],
+                            0,
+                            || {
+                                path_bit.value().copied().and_then(|b| {
+                                    if b == Fp::zero() {
+                                        hash_lr.value().copied()
+                                    } else {
+                                        hash_rl.value().copied()
+                                    }
+                                })
+                            },
+                        )?;
+                        Ok(result)
+                    },
+                )?;
+            }
+            current
+        };
+
+        // ── Expose public inputs via instance column ───────────
+        // Instance layout: [0]=merkle_root, [1]=nullifier_0, [2]=nullifier_1,
+        //                  [3]=out_commitment_0, [4]=out_commitment_1
+        layouter.constrain_instance(merkle_root_0.cell(), config.instance, 0)?;
+        // Both roots must be the same (single Merkle tree)
+        layouter.constrain_instance(merkle_root_1.cell(), config.instance, 0)?;
+        layouter.constrain_instance(nullifier_0.cell(), config.instance, 1)?;
+        layouter.constrain_instance(nullifier_1.cell(), config.instance, 2)?;
+        layouter.constrain_instance(out_commitment_0.cell(), config.instance, 3)?;
+        layouter.constrain_instance(out_commitment_1.cell(), config.instance, 4)?;
 
         Ok(())
     }
@@ -521,33 +694,141 @@ impl Circuit<Fp> for WithdrawCircuit {
         // Compute input commitment
         let inner =
             poseidon_chip.hash(layouter.namespace(|| "inner"), &in_secret, &in_nonce)?;
-        let _commitment =
+        let commitment =
             poseidon_chip.hash(layouter.namespace(|| "commitment"), &inner, &in_value)?;
 
         // Value split check
-        layouter.assign_region(
+        let (withdraw_cell, change_cell) = layouter.assign_region(
             || "value split",
             |mut region| {
                 config.s_value_split.enable(&mut region, 0)?;
                 in_value.copy_advice(|| "input", &mut region, config.advice[0], 0)?;
-                region.assign_advice(
+                let w = region.assign_advice(
                     || "withdraw",
                     config.advice[1],
                     0,
                     || self.withdraw_value,
                 )?;
-                region.assign_advice(
+                let c = region.assign_advice(
                     || "change",
                     config.advice[2],
                     0,
                     || self.change_value,
                 )?;
-                Ok(())
+                Ok((w, c))
             },
         )?;
 
-        // Public inputs: [0]=root, [1]=nullifier, [2]=recipient, [3]=withdraw_value,
-        //                [4]=change_commitment
+        // ── Domain separation ──────────────────────────────────
+        let (chain_id_cell, app_id_cell) = layouter.assign_region(
+            || "domain params",
+            |mut region| {
+                let cid = region.assign_advice(
+                    || "chain_id",
+                    config.advice[0],
+                    0,
+                    || self.chain_id,
+                )?;
+                let aid = region.assign_advice(
+                    || "app_id",
+                    config.advice[1],
+                    0,
+                    || self.app_id,
+                )?;
+                Ok((cid, aid))
+            },
+        )?;
+        let domain_hash =
+            poseidon_chip.hash(layouter.namespace(|| "domain_hash"), &chain_id_cell, &app_id_cell)?;
+
+        // ── Nullifier derivation ───────────────────────────────
+        let nul_inner =
+            poseidon_chip.hash(layouter.namespace(|| "nul_inner"), &in_secret, &commitment)?;
+        let nullifier =
+            poseidon_chip.hash(layouter.namespace(|| "nullifier"), &nul_inner, &domain_hash)?;
+
+        // ── Change note commitment ─────────────────────────────
+        let (change_secret, change_nonce) = layouter.assign_region(
+            || "change note",
+            |mut region| {
+                let s = region.assign_advice(
+                    || "change_secret",
+                    config.advice[0],
+                    0,
+                    || self.change_secret,
+                )?;
+                let n = region.assign_advice(
+                    || "change_nonce",
+                    config.advice[1],
+                    0,
+                    || self.change_nonce,
+                )?;
+                Ok((s, n))
+            },
+        )?;
+        let change_inner =
+            poseidon_chip.hash(layouter.namespace(|| "change_inner"), &change_secret, &change_nonce)?;
+        let change_commitment =
+            poseidon_chip.hash(layouter.namespace(|| "change_cm"), &change_inner, &change_cell)?;
+
+        // ── Merkle path verification ───────────────────────────
+        let merkle_root = {
+            let mut current = commitment.clone();
+            for i in 0..TREE_DEPTH {
+                let (path_elem, path_bit) = layouter.assign_region(
+                    || format!("merkle_level_{}", i),
+                    |mut region| {
+                        config.merkle.s_merkle.enable(&mut region, 0)?;
+                        let elem = region.assign_advice(
+                            || "sibling",
+                            config.advice[0],
+                            0,
+                            || self.in_path[i],
+                        )?;
+                        let bit = region.assign_advice(
+                            || "bit",
+                            config.merkle.path_bits,
+                            0,
+                            || self.in_bits[i],
+                        )?;
+                        Ok((elem, bit))
+                    },
+                )?;
+                let hash_lr =
+                    poseidon_chip.hash(layouter.namespace(|| format!("w_lr_{}", i)), &current, &path_elem)?;
+                let hash_rl =
+                    poseidon_chip.hash(layouter.namespace(|| format!("w_rl_{}", i)), &path_elem, &current)?;
+
+                current = layouter.assign_region(
+                    || format!("merkle_select_{}", i),
+                    |mut region| {
+                        let result = region.assign_advice(
+                            || "selected hash",
+                            config.advice[0],
+                            0,
+                            || {
+                                path_bit.value().copied().and_then(|b| {
+                                    if b == Fp::zero() {
+                                        hash_lr.value().copied()
+                                    } else {
+                                        hash_rl.value().copied()
+                                    }
+                                })
+                            },
+                        )?;
+                        Ok(result)
+                    },
+                )?;
+            }
+            current
+        };
+
+        // ── Expose public inputs ───────────────────────────────
+        // Instance: [0]=root, [1]=nullifier, [2]=withdraw_value, [3]=change_commitment
+        layouter.constrain_instance(merkle_root.cell(), config.instance, 0)?;
+        layouter.constrain_instance(nullifier.cell(), config.instance, 1)?;
+        layouter.constrain_instance(withdraw_cell.cell(), config.instance, 2)?;
+        layouter.constrain_instance(change_commitment.cell(), config.instance, 3)?;
 
         Ok(())
     }
