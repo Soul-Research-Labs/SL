@@ -1,0 +1,93 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly security scan every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+
+jobs:
+  solidity-slither:
+    name: Slither (Solidity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts/
+          fail-on: medium
+          sarif: results/slither.sarif
+
+      - name: Upload Slither SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results/slither.sarif
+
+  solidity-mythril:
+    name: Mythril (Solidity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Run Mythril
+        uses: docker://mythril/myth:latest
+        with:
+          args: analyze contracts/core/PrivacyPool.sol --solc-json foundry.toml --execution-timeout 300
+
+  rust-audit:
+    name: Cargo Audit (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run audit
+        run: cargo audit
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  npm-audit:
+    name: NPM Audit (SDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: sdk
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: sdk
+        run: npm audit --audit-level=moderate

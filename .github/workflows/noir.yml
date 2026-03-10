@@ -1,0 +1,72 @@
+name: Noir Circuits CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "noir/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "noir/**"
+
+jobs:
+  compile-and-verify:
+    name: Compile & Verify Circuits
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        circuit:
+          - deposit
+          - withdraw
+          - transfer
+          - stealth
+          - nullifier_check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nargo
+        uses: noir-lang/noirup@v0.1.3
+        with:
+          toolchain: nightly
+
+      - name: Compile ${{ matrix.circuit }}
+        working-directory: noir/circuits/${{ matrix.circuit }}
+        run: nargo compile
+
+      - name: Check ${{ matrix.circuit }}
+        working-directory: noir/circuits/${{ matrix.circuit }}
+        run: nargo check
+
+      - name: Run tests for ${{ matrix.circuit }}
+        working-directory: noir/circuits/${{ matrix.circuit }}
+        run: nargo test
+
+      - name: Upload circuit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: circuit-${{ matrix.circuit }}
+          path: noir/circuits/${{ matrix.circuit }}/target/
+          retention-days: 30
+
+  format-check:
+    name: Noir Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nargo
+        uses: noir-lang/noirup@v0.1.3
+        with:
+          toolchain: nightly
+
+      - name: Check formatting
+        run: |
+          for circuit in deposit withdraw transfer stealth nullifier_check; do
+            echo "Checking noir/circuits/$circuit ..."
+            cd noir/circuits/$circuit
+            nargo fmt --check
+            cd -
+          done

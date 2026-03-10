@@ -1,0 +1,61 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run integration tests
+        run: forge test --match-path "test/integration/*" -vvv
+
+  fork-tests:
+    name: Fork Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run fork tests (Fuji)
+        run: forge test --match-path "test/fork/*" -vvv --fork-url ${{ secrets.AVALANCHE_FUJI_RPC || 'https://api.avax-test.network/ext/bc/C/rpc' }}
+
+  fuzz:
+    name: Fuzz Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run fuzz tests (extended runs)
+        run: forge test --match-path "test/fuzz/*" -vvv
+        env:
+          FOUNDRY_FUZZ_RUNS: 1000
