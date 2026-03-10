@@ -216,10 +216,10 @@ contract UniversalNullifierRegistry {
             if (
                 chains[cid].active && chains[cid].latestEpochRoot != bytes32(0)
             ) {
-                aggregated = PoseidonHasher.hash(
-                    aggregated,
-                    chains[cid].latestEpochRoot
-                );
+                aggregated = bytes32(PoseidonHasher.hash(
+                    uint256(aggregated),
+                    uint256(chains[cid].latestEpochRoot)
+                ));
                 activeCount++;
             }
         }
@@ -335,9 +335,9 @@ contract UniversalNullifierRegistry {
         bytes32 current = leaf;
         for (uint256 i = 0; i < proof.length; i++) {
             if (pathIndices[i] == 0) {
-                current = PoseidonHasher.hash(current, proof[i]);
+                current = bytes32(PoseidonHasher.hash(uint256(current), uint256(proof[i])));
             } else {
-                current = PoseidonHasher.hash(proof[i], current);
+                current = bytes32(PoseidonHasher.hash(uint256(proof[i]), uint256(current)));
             }
         }
         return current == root;

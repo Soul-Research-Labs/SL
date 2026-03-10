@@ -124,7 +124,8 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-circuits, build-contracts, build-wasm, build-relayer, build-sdk]
+    needs:
+      [build-circuits, build-contracts, build-wasm, build-relayer, build-sdk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

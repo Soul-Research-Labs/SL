@@ -99,13 +99,13 @@ impl ProofGenerator {
 
         // Placeholder: generate a structurally valid proof envelope
         // In production the raw_proof is the Halo2 IPA proof bytes
-        let proof_body = keccak256(&output_commitments[0]);
+        let proof_body = poseidon_hash(&output_commitments[0]);
         let raw_proof = Self::padded_proof_envelope(&proof_body, 2048);
 
         // SNARK wrapping for EVM targets
         let snark_wrapper = if self.snark_wrapper_pk.is_some() {
             // In production: snark_wrap(&raw_proof, &self.snark_wrapper_pk)
-            let snark_body = keccak256(&nullifiers[0]);
+            let snark_body = poseidon_hash(&nullifiers[0]);
             Some(Self::padded_proof_envelope(&snark_body, 256))
         } else {
             None
@@ -146,10 +146,10 @@ impl ProofGenerator {
         // Zero commitment for the second output (no second output in withdraw)
         let zero_commitment = [0u8; 32];
 
-        let proof_body = keccak256(&change_commitment);
+        let proof_body = poseidon_hash(&change_commitment);
         let raw_proof = Self::padded_proof_envelope(&proof_body, 2048);
         let snark_wrapper = if self.snark_wrapper_pk.is_some() {
-            let snark_body = keccak256(&nullifiers[0]);
+            let snark_body = poseidon_hash(&nullifiers[0]);
             Some(Self::padded_proof_envelope(&snark_body, 256))
         } else {
             None
@@ -203,7 +203,7 @@ impl ProofGenerator {
         // let domain_tag = poseidon.hash(&[chain_id_field, app_id_field]);
         // let nullifier_0 = poseidon.hash(&[inner_0, domain_tag]);
 
-        // Placeholder: keccak256-based (Poseidon in production with lumora_primitives)
+        // Poseidon-based (aligned with on-chain PoseidonHasher.sol)
         let domain_bytes = {
             let mut buf = [0u8; 8];
             buf[..4].copy_from_slice(&chain_id.to_be_bytes());
@@ -217,13 +217,13 @@ impl ProofGenerator {
             let mut inner_input = Vec::with_capacity(64);
             inner_input.extend_from_slice(&spending_keys[i]);
             inner_input.extend_from_slice(&commitments[i]);
-            let inner = keccak256(&inner_input);
+            let inner = poseidon_hash(&inner_input);
 
             // nullifier = H(inner || domain)
             let mut nul_input = Vec::with_capacity(40);
             nul_input.extend_from_slice(&inner);
             nul_input.extend_from_slice(&domain_bytes);
-            nullifiers[i] = keccak256(&nul_input);
+            nullifiers[i] = poseidon_hash(&nul_input);
         }
         nullifiers
     }
@@ -237,12 +237,12 @@ impl ProofGenerator {
 
     fn compute_single_commitment(note: &OutputNote) -> [u8; 32] {
         // commitment = Poseidon(recipient_pk, value, blinding)
-        // Placeholder: keccak256 (Poseidon in production)
+        // commitment = Poseidon(recipient_pk, value, blinding)
         let mut input = Vec::with_capacity(80);
         input.extend_from_slice(&note.recipient_pk);
         input.extend_from_slice(&note.value.to_be_bytes());
         input.extend_from_slice(&note.blinding);
-        keccak256(&input)
+        poseidon_hash(&input)
     }
 
     /// Generate a padded proof envelope.
@@ -268,13 +268,25 @@ impl ProofGenerator {
     }
 }
 
-/// Keccak-256 hash (cryptographic).
+/// BN254 Poseidon hash (production-grade).
 ///
-/// Used as a stand-in for Poseidon in non-circuit (off-chain) code.
-/// In production, replace with `lumora_primitives::poseidon::PoseidonHasher`
-/// for exact field-arithmetic alignment with the Halo2 circuit.
-fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak256::new();
-    hasher.update(data);
-    hasher.finalize().into()
+/// Uses the light-poseidon crate for exact field-arithmetic alignment
+/// with the on-chain PoseidonHasher.sol and Halo2 circuit constraints.
+fn poseidon_hash(data: &[u8]) -> [u8; 32] {
+    use light_poseidon::{Poseidon, PoseidonBytesHasher, parameters::bn254_x5};
+    use ark_bn254::Fr;
+
+    // For arbitrary-length data, split into 31-byte chunks (BN254 field fits 31 bytes)
+    let chunks: Vec<&[u8]> = data.chunks(31).collect();
+    let mut inputs: Vec<[u8; 32]> = Vec::with_capacity(chunks.len());
+    for chunk in &chunks {
+        let mut padded = [0u8; 32];
+        padded[32 - chunk.len()..].copy_from_slice(chunk);
+        inputs.push(padded);
+    }
+
+    // Use Poseidon with the appropriate width
+    let mut poseidon = Poseidon::<Fr>::new_circom(inputs.len()).expect("unsupported arity");
+    let refs: Vec<&[u8]> = inputs.iter().map(|x| x.as_slice()).collect();
+    poseidon.hash_bytes_be(&refs).expect("poseidon hash failed")
 }

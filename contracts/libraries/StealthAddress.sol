@@ -116,9 +116,11 @@ library StealthAddress {
         uint256 value,
         bytes32 blinding
     ) internal pure returns (bytes32 commitment) {
-        commitment = PoseidonHasher.poseidon(
-            [bytes32(uint256(uint160(stealthAddr))), bytes32(value), blinding]
-        );
+        commitment = bytes32(PoseidonHasher.hash3(
+            uint256(uint160(stealthAddr)),
+            value,
+            uint256(blinding)
+        ));
     }
 
     /// @notice Verify that an announcement's view tag matches expectations.

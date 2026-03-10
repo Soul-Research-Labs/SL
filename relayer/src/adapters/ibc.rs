@@ -85,7 +85,7 @@ fn encode_ibc_send_packet(
     epoch_id: u64,
     nullifier_root: &[u8; 32],
 ) -> Vec<u8> {
-    let selector: [u8; 4] = [0xa1, 0x23, 0xc3, 0x3e]; // placeholder
+    let selector: [u8; 4] = [0x8c, 0x87, 0xcb, 0xe6]; // keccak256("sendIbcPacket(uint256,uint256,bytes32)")[..4]
 
     let mut data = Vec::with_capacity(4 + 96);
     data.extend_from_slice(&selector);

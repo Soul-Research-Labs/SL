@@ -3,51 +3,48 @@ pragma solidity ^0.8.24;
 
 import {IBridgeAdapter} from "../interfaces/IBridgeAdapter.sol";
 
+/// @notice Teleporter message format (must be top-level for calldata encoding)
+struct TeleporterMessageInput {
+    bytes32 destinationBlockchainID;
+    address destinationAddress;
+    TeleporterFeeInfo feeInfo;
+    uint256 requiredGasLimit;
+    address[] allowedRelayerAddresses;
+    bytes message;
+}
+
+struct TeleporterFeeInfo {
+    address feeTokenAddress;
+    uint256 amount;
+}
+
+/// @notice Teleporter messenger interface (deployed by Avalanche on each subnet)
+interface ITeleporterMessenger {
+    function sendCrossChainMessage(TeleporterMessageInput calldata messageInput)
+        external
+        returns (bytes32 messageID);
+
+    function getMessageHash(bytes32 sourceBlockchainID, uint256 messageNonce)
+        external
+        view
+        returns (bytes32);
+}
+
+/// @notice Teleporter receiver interface
+interface ITeleporterReceiver {
+    function receiveTeleporterMessage(
+        bytes32 sourceBlockchainID,
+        address originSenderAddress,
+        bytes calldata message
+    ) external;
+}
+
 /// @title TeleporterAdapter — Bridge adapter using Avalanche Teleporter
 /// @notice Higher-level abstraction over AWM for cross-subnet messaging.
 ///         Teleporter provides reliable delivery, replay protection, and
 ///         receipt tracking built on top of raw AWM.
 /// @dev See: https://github.com/ava-labs/teleporter
 contract TeleporterAdapter is IBridgeAdapter {
-    // ── Types ──────────────────────────────────────────────────────────
-
-    /// @notice Teleporter message format
-    struct TeleporterMessageInput {
-        bytes32 destinationBlockchainID;
-        address destinationAddress;
-        TeleporterFeeInfo feeInfo;
-        uint256 requiredGasLimit;
-        address[] allowedRelayerAddresses;
-        bytes message;
-    }
-
-    struct TeleporterFeeInfo {
-        address feeTokenAddress;
-        uint256 amount;
-    }
-
-    // ── Interfaces ─────────────────────────────────────────────────────
-
-    /// @notice Teleporter messenger interface (deployed by Avalanche on each subnet)
-    interface ITeleporterMessenger {
-        function sendCrossChainMessage(TeleporterMessageInput calldata messageInput)
-            external
-            returns (bytes32 messageID);
-
-        function getMessageHash(bytes32 sourceBlockchainID, uint256 messageNonce)
-            external
-            view
-            returns (bytes32);
-    }
-
-    /// @notice Teleporter receiver interface
-    interface ITeleporterReceiver {
-        function receiveTeleporterMessage(
-            bytes32 sourceBlockchainID,
-            address originSenderAddress,
-            bytes calldata message
-        ) external;
-    }
 
     // ── State ──────────────────────────────────────────────────────────
 

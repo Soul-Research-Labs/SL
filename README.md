@@ -12,25 +12,25 @@
 │                      Soul Privacy Stack                          │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│   │  TypeScript   │  │   Lumora      │  │  Cross-Chain         │  │
-│   │  SDK          │  │   Coprocessor │  │  Relayer             │  │
-│   │  (viem)       │  │   (Halo2)     │  │  (Rust/tokio)       │  │
-│   └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘  │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│   │  TypeScript  │  │   Lumora     │  │  Cross-Chain         │   │
+│   │  SDK         │  │   Coprocessor│  │  Relayer             │   │
+│   │  (viem)      │  │   (Halo2)    │  │  (Rust/tokio)        │   │
+│   └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
 │          │                 │                      │              │
 │   ┌──────▼─────────────────▼──────────────────────▼───────────┐  │
-│   │                   EVM Contracts Layer                      │  │
+│   │                   EVM Contracts Layer                     │  │
 │   │  PrivacyPool · EpochManager · UniversalNullifierRegistry  │  │
 │   │  PoseidonHasher · MerkleTree · DomainNullifier            │  │
 │   │  Halo2SnarkVerifier · UltraHonkVerifier                   │  │
 │   └────────┬──────────────┬──────────────┬───────────┬────────┘  │
-│            │              │              │           │            │
-│   ┌────────▼────┐ ┌──────▼─────┐ ┌──────▼────┐ ┌───▼────────┐  │
-│   │ Avalanche   │ │ Polkadot   │ │ Cosmos    │ │ Near       │  │
-│   │ AWM         │ │ XCM        │ │ IBC       │ │ Rainbow    │  │
-│   │ Teleporter  │ │ Moonbeam   │ │ Evmos     │ │ Aurora     │  │
-│   └─────────────┘ │ Astar      │ └───────────┘ └────────────┘  │
-│                    └────────────┘                                 │
+│            │              │              │           │           │
+│   ┌────────▼────┐ ┌──────▼─────┐ ┌──────▼────┐ ┌───▼────────┐    │
+│   │ Avalanche   │ │ Polkadot   │ │ Cosmos    │ │ Near       │    │
+│   │ AWM         │ │ XCM        │ │ IBC       │ │ Rainbow    │    │
+│   │ Teleporter  │ │ Moonbeam   │ │ Evmos     │ │ Aurora     │    │
+│   └─────────────┘ │ Astar      │ └───────────┘ └────────────┘    │
+│                   └────────────┘                                 │
 │                                                                  │
 │   ┌──────────────────────────────────────────────────────────┐   │
 │   │              Native Substrate Pallet                     │   │

@@ -90,8 +90,8 @@ fn encode_xcm_transact(
     epoch_id: u64,
     nullifier_root: &[u8; 32],
 ) -> Vec<u8> {
-    // Selector for transactThroughSigned(...)
-    let selector: [u8; 4] = [0xb6, 0x48, 0xf3, 0x73]; // placeholder
+    // Selector for transactThroughSigned(uint256,uint256,bytes32)
+    let selector: [u8; 4] = [0x62, 0x7d, 0x6f, 0xf6];
 
     let mut data = Vec::with_capacity(4 + 128);
     data.extend_from_slice(&selector);

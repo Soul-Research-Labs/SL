@@ -40,6 +40,8 @@ reqwest = { version = "0.12", features = ["json"] }
 # Cryptographic hashing
 sha3 = "0.10"
 rand = "0.8"
+light-poseidon = "0.2"
+ark-bn254 = "0.4"
 
 [features]
 default = ["evm"]

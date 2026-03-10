@@ -88,7 +88,7 @@ fn encode_rainbow_send(
     epoch_id: u64,
     nullifier_root: &[u8; 32],
 ) -> Vec<u8> {
-    let selector: [u8; 4] = [0xd2, 0x04, 0xc3, 0x8a]; // placeholder
+    let selector: [u8; 4] = [0xf2, 0x86, 0xb6, 0xad]; // keccak256("sendToNear(uint256,uint256,bytes32)")[..4]
 
     let mut data = Vec::with_capacity(4 + 96);
     data.extend_from_slice(&selector);

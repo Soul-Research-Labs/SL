@@ -90,7 +90,7 @@ fn encode_receive_remote_root(
     nullifier_root: &[u8; 32],
 ) -> Vec<u8> {
     // Function selector: keccak256("receiveRemoteEpochRoot(uint256,uint256,bytes32)")[..4]
-    let selector: [u8; 4] = [0x8b, 0x7e, 0x43, 0x11]; // placeholder — compute at build
+    let selector: [u8; 4] = [0x46, 0x4b, 0xe0, 0xfa];
 
     let mut data = Vec::with_capacity(4 + 96);
     data.extend_from_slice(&selector);
