@@ -2,6 +2,62 @@
 
 All notable changes to the **Soul Privacy Stack** — a multi-chain ZK privacy middleware derived from ZAseon and Lumora — will be documented in this file.
 
+## [0.8.0] - 2026-03-XX — Testing, Documentation & Infrastructure Hardening
+
+### Testing
+
+- **Noir circuit tests** — Added 15 tests across 3 circuits:
+  - `nullifier_check`: 4 tests (valid inclusion, wrong nullifier, wrong path, right-child path)
+  - `transfer`: 4 tests + `build_root_for_leaf()` helper (valid transfer, value mismatch, wrong nullifier, wrong commitment)
+  - `withdraw`: 7 tests + helper (full withdrawal, partial withdrawal, value mismatch, zero value, zero recipient, wrong nullifier, zero secret)
+- **Python SDK tests** — 23 new tests added:
+  - `test_client.py`: 15 tests for `SoulPrivacyClient` (chain_id, pool_address, get_latest_root, is_known_root, is_nullifier_spent, get_pool_balance, commitment_exists, build_deposit_tx, build_transfer_tx, build_withdraw_tx, ABI checks)
+  - `test_prover.py`: 8 async tests for `ProofClient` (health, prove_transfer, prove_withdraw, payload validation, HTTP error handling)
+- **CosmWasm tests** — Expanded from 9 to 22 `cw-multi-test` integration tests
+- **NEAR tests** — 30 new unit tests for privacy pool contract
+- **ink! tests** — Expanded from 8 to 22 unit tests
+- **Solidity fork tests** — Added 5 chain-specific fork test files (Fuji, Moonbase, Shibuya, Evmos, Aurora)
+- **Solidity integration tests** — Added deposit lifecycle and multi-chain relay integration tests
+- **Solidity fuzz tests** — Added deep fuzz tests for deposit amounts, merkle root consistency, nullifier uniqueness, and cross-chain value conservation
+
+### Formal Verification
+
+- **Certora BridgeAdapters.spec** — Replaced placeholder with 9 formal verification properties: processedMessageMonotonicity, governanceNonZero invariant, onlyGovernanceCanRegisterChain, governanceTransferCorrectness, sendMessageImpliesChainSupported, receiveDoesNotAffectBalance, chainRegistrationPersistence, receiveMessageNeverReverts, sendAndReceiveOrthogonal
+
+### SDK
+
+- **Python SDK expanded** — Added `ProofClient`, `ChainType`, `GeneratedProof`, `ProofRequest` to `__init__.py` exports; added `pytest-httpx` dev dependency; added `asyncio_mode = "auto"` config
+- **Python SDK README** — New documentation with quick start, module reference, proof generation example, and testing instructions
+- **TypeScript SDK TypeDoc** — Configured API documentation generation
+- **SDK address loader** — Utility for loading deployment addresses
+
+### Documentation
+
+- **DEPLOYMENT_CHECKLIST.md** — Comprehensive 9-section deployment guide: prerequisites, environment setup, deployment order, per-chain EVM steps, non-EVM deployments, post-deployment verification, cross-chain configuration, governance handoff, operational readiness, rollback procedures
+- **ARCHITECTURE.md** — System architecture overview and component descriptions
+- **GETTING_STARTED.md** — Developer onboarding guide
+- **GOVERNANCE_PARAMETERS.md** — Governance configuration reference
+- **THREAT_MODEL.md** — Security threat analysis and mitigations
+- **MEV_PROTECTION.md** — MEV protection design document
+- **Operational runbook** — ops/RUNBOOK.md with startup, health checks, emergency procedures
+- **ADR/RFC process** — Added to CONTRIBUTING.md
+- **SECURITY.md** — Updated with current vulnerability reporting process
+
+### Infrastructure
+
+- **Docker env configuration** — Added `env_file` to Lumora service; made all ports configurable via env vars; added healthchecks for relayer and lumora; made Prometheus retention and Grafana root URL configurable; added Docker/infra env vars to `.env.example`
+- **Makefile deploy path fix** — Corrected all 7 deploy targets from `script/` to `scripts/deploy/`
+- **Makefile new targets** — `test-noir`, `test-python`, `lint-python`, `subgraph-configure`, `test-sol-fuzz-deep`, `test-sol-fork`, `test-sol-integration`
+- **Substrate pallet weights** — Enhanced `weights.rs` with detailed operation-level breakdowns and methodology documentation
+- **Monitoring alerts** — Prometheus alert rules for epoch, relayer, and system health
+- **Grafana Lumora dashboard** — Added coprocessor monitoring dashboard
+- **Python SDK CI** — GitHub Actions workflow for Python SDK linting and testing
+- **sdks/typescript/ cleanup** — Deprecated namespace; points users to primary `sdk/` directory
+
+### Relayer
+
+- **Config improvements** — Enhanced `config.example.toml` with detailed documentation and security notes
+
 ## [0.7.0] - 2026-07-XX — Security Hardening & Access Control Audit
 
 ### Security Fixes (P0 — Critical)
