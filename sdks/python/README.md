@@ -35,12 +35,12 @@ nullifier = wallet.compute_nullifier_v2(note, chain_id=43113, app_id=1)
 
 ## Modules
 
-| Module | Class | Description |
-|--------|-------|-------------|
-| `client` | `SoulPrivacyClient` | EVM on-chain reads and unsigned transaction building |
-| `wallet` | `NoteWallet` | Local shielded note tracking, creation, and selection |
-| `prover` | `ProofClient` | Async HTTP client for the Lumora ZK proof coprocessor |
-| `types` | — | Data classes: `ChainConfig`, `Note`, `NullifierInfo`, `GeneratedProof`, etc. |
+| Module   | Class               | Description                                                                  |
+| -------- | ------------------- | ---------------------------------------------------------------------------- |
+| `client` | `SoulPrivacyClient` | EVM on-chain reads and unsigned transaction building                         |
+| `wallet` | `NoteWallet`        | Local shielded note tracking, creation, and selection                        |
+| `prover` | `ProofClient`       | Async HTTP client for the Lumora ZK proof coprocessor                        |
+| `types`  | —                   | Data classes: `ChainConfig`, `Note`, `NullifierInfo`, `GeneratedProof`, etc. |
 
 ## Proof Generation
 

@@ -56,19 +56,19 @@ cp .env.example .env
 
 Required variables:
 
-| Variable | Description | Example |
-|---|---|---|
-| `DEPLOYER_PRIVATE_KEY` | Deployer EOA private key (testnet only) | `0xac0974...` |
-| `AVAX_RPC_URL` | Avalanche Fuji RPC | `https://api.avax-test.network/ext/bc/C/rpc` |
-| `MOONBEAM_RPC_URL` | Moonbase Alpha RPC | `https://rpc.api.moonbase.moonbeam.network` |
-| `ASTAR_RPC_URL` | Shibuya RPC | `https://evm.shibuya.astar.network` |
-| `EVMOS_RPC_URL` | Evmos Testnet RPC | `https://eth.bd.evmos.dev:8545` |
-| `AURORA_RPC_URL` | Aurora Testnet RPC | `https://testnet.aurora.dev` |
-| `SNOWTRACE_API_KEY` | Avalanche explorer API key | — |
-| `MOONSCAN_API_KEY` | Moonbeam explorer API key | — |
-| `VERIFIER_ADDRESS` | Pre-deployed verifier (or `0x0` for placeholder) | `0x...` |
-| `GUARDIAN_ADDRESS` | Emergency pause guardian | `0x...` |
-| `GOVERNANCE_ADDRESS` | Governance multisig / timelock | `0x...` |
+| Variable               | Description                                      | Example                                      |
+| ---------------------- | ------------------------------------------------ | -------------------------------------------- |
+| `DEPLOYER_PRIVATE_KEY` | Deployer EOA private key (testnet only)          | `0xac0974...`                                |
+| `AVAX_RPC_URL`         | Avalanche Fuji RPC                               | `https://api.avax-test.network/ext/bc/C/rpc` |
+| `MOONBEAM_RPC_URL`     | Moonbase Alpha RPC                               | `https://rpc.api.moonbase.moonbeam.network`  |
+| `ASTAR_RPC_URL`        | Shibuya RPC                                      | `https://evm.shibuya.astar.network`          |
+| `EVMOS_RPC_URL`        | Evmos Testnet RPC                                | `https://eth.bd.evmos.dev:8545`              |
+| `AURORA_RPC_URL`       | Aurora Testnet RPC                               | `https://testnet.aurora.dev`                 |
+| `SNOWTRACE_API_KEY`    | Avalanche explorer API key                       | —                                            |
+| `MOONSCAN_API_KEY`     | Moonbeam explorer API key                        | —                                            |
+| `VERIFIER_ADDRESS`     | Pre-deployed verifier (or `0x0` for placeholder) | `0x...`                                      |
+| `GUARDIAN_ADDRESS`     | Emergency pause guardian                         | `0x...`                                      |
+| `GOVERNANCE_ADDRESS`   | Governance multisig / timelock                   | `0x...`                                      |
 
 > **Mainnet Safety**: Deploy scripts include a guard that blocks placeholder verifiers on mainnet chain IDs. Always deploy real verifiers first on mainnet.
 
@@ -357,15 +357,15 @@ forge script scripts/E2EIntegration.s.sol:E2EIntegration \
 
 ## Mainnet Deployment Differences
 
-| Aspect | Testnet | Mainnet |
-|---|---|---|
-| Verifier | Placeholder allowed | **Real ZK verifier required** |
-| Epoch duration | Short (for testing) | Production cadence (e.g., 1 hour) |
-| Governance delay | 1 day | ≥ 2 days |
-| MultiSig quorum | 1-of-N | ≥ 3-of-5 |
-| Guardian | Dev EOA | Dedicated security multisig |
-| Key management | `.env` file | Hardware wallet / KMS |
-| Deploy method | `--private-key` | `--ledger` or `--trezor` |
+| Aspect           | Testnet             | Mainnet                           |
+| ---------------- | ------------------- | --------------------------------- |
+| Verifier         | Placeholder allowed | **Real ZK verifier required**     |
+| Epoch duration   | Short (for testing) | Production cadence (e.g., 1 hour) |
+| Governance delay | 1 day               | ≥ 2 days                          |
+| MultiSig quorum  | 1-of-N              | ≥ 3-of-5                          |
+| Guardian         | Dev EOA             | Dedicated security multisig       |
+| Key management   | `.env` file         | Hardware wallet / KMS             |
+| Deploy method    | `--private-key`     | `--ledger` or `--trezor`          |
 
 ---
 
