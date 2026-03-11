@@ -22,6 +22,8 @@ dataSources:
         - Withdrawal
         - MerkleTreeState
         - PoolMetrics
+        - NullifierSpent
+        - Depositor
       abis:
         - name: PrivacyPool
           file: ../out/PrivacyPool.sol/PrivacyPool.json
@@ -51,15 +53,18 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - Epoch
+        - EpochStartedEvent
         - CrossChainSync
       abis:
         - name: EpochManager
           file: ../out/EpochManager.sol/EpochManager.json
       eventHandlers:
+        - event: EpochStarted(indexed uint256,uint256)
+          handler: handleEpochStarted
         - event: EpochFinalized(indexed uint256,bytes32,uint256)
           handler: handleEpochFinalized
-        - event: RemoteRootReceived(indexed uint256,indexed uint256,bytes32)
-          handler: handleRemoteRootReceived
+        - event: RemoteEpochRootReceived(indexed uint256,indexed uint256,bytes32)
+          handler: handleRemoteEpochRootReceived
       file: ./src/epoch-manager.ts
 
   - kind: ethereum/contract

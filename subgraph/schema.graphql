@@ -87,6 +87,38 @@ type CrossChainSync @entity {
   transactionHash: Bytes!
 }
 
+# ── Nullifier Tracking ────────────────────────────────────────
+
+type NullifierSpent @entity {
+  id: ID!
+  nullifier: Bytes!
+  spentIn: String!
+  spentAt: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ── Depositor Tracking ───────────────────────────────────────
+
+type Depositor @entity {
+  id: ID!
+  address: Bytes!
+  totalDeposits: BigInt!
+  totalDepositedValue: BigDecimal!
+  firstDepositBlock: BigInt!
+  lastDepositBlock: BigInt!
+}
+
+# ── Epoch Started ────────────────────────────────────────────
+
+type EpochStartedEvent @entity {
+  id: ID!
+  epochId: BigInt!
+  startTime: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
 # ── Governance ───────────────────────────────────────────────
 
 type TimelockTransaction @entity {
