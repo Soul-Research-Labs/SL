@@ -605,3 +605,565 @@ fn zero_hash(level: u32) -> String {
     }
     z
 }
+
+// ── Tests ──────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    const GOVERNANCE: &str = "governance.testnet";
+    const ALICE: &str = "alice.testnet";
+    const BOB: &str = "bob.testnet";
+    const RELAYER: &str = "relayer.testnet";
+
+    fn governance() -> AccountId {
+        GOVERNANCE.parse().unwrap()
+    }
+    fn alice() -> AccountId {
+        ALICE.parse().unwrap()
+    }
+    fn bob() -> AccountId {
+        BOB.parse().unwrap()
+    }
+    fn relayer() -> AccountId {
+        RELAYER.parse().unwrap()
+    }
+
+    fn setup_context(predecessor: &AccountId, deposit: u128) {
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(predecessor.clone())
+            .attached_deposit(NearToken::from_yoctonear(deposit))
+            .build();
+        testing_env!(context);
+    }
+
+    fn new_pool() -> PrivacyPool {
+        setup_context(&governance(), 0);
+        PrivacyPool::new(governance(), 1313, 1)
+    }
+
+    /// Build a proof that passes `verify_proof_binding` for given public inputs.
+    fn make_valid_proof(
+        merkle_root: &str,
+        nullifiers: &[String],
+        output_commitments: &[String],
+    ) -> String {
+        // Body must be >= 320 hex chars so total proof >= 384
+        let body_hex = "ab".repeat(200); // 400 hex chars, plenty
+
+        // Replicate the binding computation from verify_proof_binding
+        let mut inputs_data = Vec::new();
+        inputs_data.extend_from_slice(merkle_root.as_bytes());
+        for nul in nullifiers {
+            inputs_data.extend_from_slice(nul.as_bytes());
+        }
+        for cm in output_commitments {
+            inputs_data.extend_from_slice(cm.as_bytes());
+        }
+        let inputs_hash = env::keccak256(&inputs_data);
+
+        let mut transcript = Vec::new();
+        transcript.extend_from_slice(b"Halo2-IPA-bind");
+        transcript.extend_from_slice(&inputs_hash);
+        transcript.extend_from_slice(body_hex.as_bytes());
+        let binding = env::keccak256(&transcript);
+        let binding_hex = hex::encode(binding);
+
+        format!("{}{}", binding_hex, body_hex)
+    }
+
+    // ── Initialization ─────────────────────────────────
+
+    #[test]
+    fn test_new_initializes_correctly() {
+        let pool = new_pool();
+        assert_eq!(pool.next_leaf_index, 0);
+        assert_eq!(pool.current_epoch_id, 0);
+        assert_eq!(pool.pool_balance, 0);
+        assert_eq!(pool.domain_chain_id, 1313);
+        assert_eq!(pool.domain_app_id, 1);
+        assert_eq!(pool.governance, governance());
+        assert!(pool.authorized_relayer.is_none());
+    }
+
+    #[test]
+    fn test_initial_epoch_exists() {
+        let pool = new_pool();
+        let epoch = pool.get_epoch_info(0).unwrap();
+        assert!(!epoch.finalized);
+        assert_eq!(epoch.nullifier_count, 0);
+        assert_eq!(epoch.nullifier_root, ZERO_HASH);
+        assert!(epoch.end_block.is_none());
+    }
+
+    #[test]
+    fn test_pool_status() {
+        let pool = new_pool();
+        let status = pool.get_pool_status();
+        assert_eq!(status.total_deposits, 0);
+        assert_eq!(status.pool_balance.0, 0);
+        assert_eq!(status.current_epoch, 0);
+        assert_eq!(status.domain_chain_id, 1313);
+        assert_eq!(status.domain_app_id, 1);
+    }
+
+    // ── Deposit ────────────────────────────────────────
+
+    #[test]
+    fn test_deposit_works() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000_000_000_000_000_000_000_000); // 1 NEAR
+        pool.deposit("aabb".repeat(16)); // 64 hex chars
+        assert_eq!(pool.next_leaf_index, 1);
+        assert_eq!(pool.pool_balance, 1_000_000_000_000_000_000_000_000);
+    }
+
+    #[test]
+    fn test_deposit_updates_root() {
+        let mut pool = new_pool();
+        let root_before = pool.get_latest_root();
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("cc00".repeat(16));
+        let root_after = pool.get_latest_root();
+        assert_ne!(root_before, root_after);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit amount must be non-zero")]
+    fn test_deposit_zero_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 0);
+        pool.deposit("dd00".repeat(16));
+    }
+
+    #[test]
+    #[should_panic(expected = "Commitment already exists")]
+    fn test_deposit_duplicate_commitment_fails() {
+        let mut pool = new_pool();
+        let commitment = "ee11".repeat(16);
+        setup_context(&alice(), 1000);
+        pool.deposit(commitment.clone());
+        setup_context(&bob(), 2000);
+        pool.deposit(commitment);
+    }
+
+    #[test]
+    fn test_multiple_deposits() {
+        let mut pool = new_pool();
+        for i in 0u8..5 {
+            let commitment = format!("{:02x}", i).repeat(32);
+            setup_context(&alice(), 1000);
+            pool.deposit(commitment);
+        }
+        assert_eq!(pool.next_leaf_index, 5);
+        assert_eq!(pool.pool_balance, 5000);
+    }
+
+    // ── Transfer ───────────────────────────────────────
+
+    #[test]
+    fn test_transfer_works() {
+        let mut pool = new_pool();
+
+        // Deposit to get a valid root
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.transfer(proof, root, nullifiers, outputs);
+
+        assert_eq!(pool.next_leaf_index, 3); // 1 deposit + 2 outputs
+        assert_eq!(pool.pool_balance, 1_000_000); // unchanged for transfer
+    }
+
+    #[test]
+    #[should_panic(expected = "Nullifier already spent")]
+    fn test_transfer_double_spend_fails() {
+        let mut pool = new_pool();
+
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs1 = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs1);
+        pool.transfer(proof, root.clone(), nullifiers.clone(), outputs1);
+
+        // Try to re-use same nullifiers — should fail
+        let root2 = pool.get_latest_root();
+        let outputs2 = vec!["ff66".repeat(16), "1177".repeat(16)];
+        let proof2 = make_valid_proof(&root2, &nullifiers, &outputs2);
+        pool.transfer(proof2, root2, nullifiers, outputs2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown Merkle root")]
+    fn test_transfer_bad_root_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+
+        let fake_root = "dead".repeat(16);
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&fake_root, &nullifiers, &outputs);
+        pool.transfer(proof, fake_root, nullifiers, outputs);
+    }
+
+    #[test]
+    #[should_panic(expected = "Exactly 2 nullifiers required")]
+    fn test_transfer_wrong_nullifier_count() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        setup_context(&alice(), 0);
+        pool.transfer(
+            "ab".repeat(200),
+            root,
+            vec!["bb22".repeat(16)],
+            vec!["dd44".repeat(16), "ee55".repeat(16)],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid ZK proof")]
+    fn test_transfer_bad_proof_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        // Invalid proof — correct length but wrong binding
+        let bad_proof = "ab".repeat(200);
+        setup_context(&alice(), 0);
+        pool.transfer(bad_proof, root, nullifiers, outputs);
+    }
+
+    // ── Withdraw ───────────────────────────────────────
+
+    #[test]
+    fn test_withdraw_works() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 5_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.withdraw(
+            proof,
+            root,
+            nullifiers,
+            outputs,
+            bob(),
+            U128(1_000_000),
+        );
+
+        assert_eq!(pool.pool_balance, 4_000_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Withdrawal must be non-zero")]
+    fn test_withdraw_zero_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 5_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.withdraw(proof, root, nullifiers, outputs, bob(), U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient pool balance")]
+    fn test_withdraw_exceeds_balance_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.withdraw(proof, root, nullifiers, outputs, bob(), U128(999_999));
+    }
+
+    // ── Epoch Management ───────────────────────────────
+
+    #[test]
+    fn test_finalize_epoch() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+        pool.finalize_epoch();
+
+        assert_eq!(pool.current_epoch_id, 1);
+        let epoch0 = pool.get_epoch_info(0).unwrap();
+        assert!(epoch0.finalized);
+        assert!(epoch0.end_block.is_some());
+
+        let epoch1 = pool.get_epoch_info(1).unwrap();
+        assert!(!epoch1.finalized);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only governance can finalize epoch")]
+    fn test_finalize_epoch_non_governance_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 0);
+        pool.finalize_epoch();
+    }
+
+    #[test]
+    fn test_finalize_epoch_with_nullifiers() {
+        let mut pool = new_pool();
+
+        // Deposit then transfer to create nullifiers in epoch 0
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nullifiers = vec!["bb22".repeat(16), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.transfer(proof, root, nullifiers, outputs);
+
+        // Finalize
+        setup_context(&governance(), 0);
+        pool.finalize_epoch();
+
+        let epoch0 = pool.get_epoch_info(0).unwrap();
+        assert!(epoch0.finalized);
+        assert_eq!(epoch0.nullifier_count, 2);
+        assert_ne!(epoch0.nullifier_root, ZERO_HASH);
+    }
+
+    #[test]
+    fn test_multiple_epoch_finalizations() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+
+        pool.finalize_epoch(); // epoch 0 → 1
+        assert_eq!(pool.current_epoch_id, 1);
+        assert!(pool.get_epoch_info(0).unwrap().finalized);
+
+        pool.finalize_epoch(); // epoch 1 → 2
+        assert_eq!(pool.current_epoch_id, 2);
+        assert!(pool.get_epoch_info(1).unwrap().finalized);
+        assert!(!pool.get_epoch_info(2).unwrap().finalized);
+    }
+
+    // ── Cross-chain Sync ───────────────────────────────
+
+    #[test]
+    fn test_set_authorized_relayer() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+        pool.set_authorized_relayer(Some(relayer()));
+        assert_eq!(pool.authorized_relayer, Some(relayer()));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only governance can set relayer")]
+    fn test_set_authorized_relayer_non_governance_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 0);
+        pool.set_authorized_relayer(Some(relayer()));
+    }
+
+    #[test]
+    fn test_sync_epoch_root_by_governance() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+        pool.sync_epoch_root(1, 0, "aabb".repeat(16));
+
+        let stored = pool.get_remote_epoch_root(1, 0);
+        assert_eq!(stored, Some("aabb".repeat(16)));
+    }
+
+    #[test]
+    fn test_sync_epoch_root_by_relayer() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+        pool.set_authorized_relayer(Some(relayer()));
+
+        setup_context(&relayer(), 0);
+        pool.sync_epoch_root(43114, 5, "ccdd".repeat(16));
+
+        let stored = pool.get_remote_epoch_root(43114, 5);
+        assert_eq!(stored, Some("ccdd".repeat(16)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only governance or authorized relayer can sync epoch roots")]
+    fn test_sync_epoch_root_unauthorized_fails() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 0);
+        pool.sync_epoch_root(1, 0, "aabb".repeat(16));
+    }
+
+    #[test]
+    #[should_panic(expected = "Nullifier root cannot be empty")]
+    fn test_sync_epoch_root_empty_root_fails() {
+        let mut pool = new_pool();
+        setup_context(&governance(), 0);
+        pool.sync_epoch_root(1, 0, String::new());
+    }
+
+    // ── View Methods ───────────────────────────────────
+
+    #[test]
+    fn test_nullifier_not_spent_initially() {
+        let pool = new_pool();
+        assert!(!pool.is_nullifier_spent("ff00".repeat(16)));
+    }
+
+    #[test]
+    fn test_nullifier_spent_after_transfer() {
+        let mut pool = new_pool();
+        setup_context(&alice(), 1_000_000);
+        pool.deposit("aa11".repeat(16));
+        let root = pool.get_latest_root();
+
+        let nul0 = "bb22".repeat(16);
+        let nullifiers = vec![nul0.clone(), "cc33".repeat(16)];
+        let outputs = vec!["dd44".repeat(16), "ee55".repeat(16)];
+
+        setup_context(&alice(), 0);
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        pool.transfer(proof, root, nullifiers, outputs);
+
+        assert!(pool.is_nullifier_spent(nul0));
+    }
+
+    #[test]
+    fn test_get_remote_epoch_root_missing() {
+        let pool = new_pool();
+        assert_eq!(pool.get_remote_epoch_root(999, 999), None);
+    }
+
+    #[test]
+    fn test_get_epoch_info_missing() {
+        let pool = new_pool();
+        assert!(pool.get_epoch_info(999).is_none());
+    }
+
+    // ── Proof Verification (free function) ─────────────
+
+    #[test]
+    fn test_verify_proof_binding_valid() {
+        setup_context(&alice(), 0); // need env for keccak256
+        let root = "aa".repeat(32);
+        let nullifiers = vec!["bb".repeat(32), "cc".repeat(32)];
+        let outputs = vec!["dd".repeat(32), "ee".repeat(32)];
+        let proof = make_valid_proof(&root, &nullifiers, &outputs);
+        assert!(verify_proof_binding(&proof, &root, &nullifiers, &outputs));
+    }
+
+    #[test]
+    fn test_verify_proof_too_short() {
+        setup_context(&alice(), 0);
+        assert!(!verify_proof_binding("ab", "aa", &["bb".into()], &["cc".into()]));
+    }
+
+    #[test]
+    fn test_verify_proof_all_zeros_rejected() {
+        setup_context(&alice(), 0);
+        let proof = "0".repeat(400);
+        assert!(!verify_proof_binding(&proof, "aa", &["bb".into()], &["cc".into()]));
+    }
+
+    #[test]
+    fn test_verify_proof_duplicate_nullifiers_rejected() {
+        setup_context(&alice(), 0);
+        let proof = "ab".repeat(200);
+        let nul = "bb".repeat(32);
+        assert!(!verify_proof_binding(&proof, "aa", &[nul.clone(), nul], &["cc".into()]));
+    }
+
+    #[test]
+    fn test_verify_proof_zero_root_rejected() {
+        setup_context(&alice(), 0);
+        let proof = "ab".repeat(200);
+        assert!(!verify_proof_binding(
+            &proof,
+            ZERO_HASH,
+            &["bb".repeat(32), "cc".repeat(32)],
+            &["dd".repeat(32)],
+        ));
+    }
+
+    #[test]
+    fn test_verify_proof_zero_nullifier_rejected() {
+        setup_context(&alice(), 0);
+        let proof = "ab".repeat(200);
+        assert!(!verify_proof_binding(
+            &proof,
+            &"aa".repeat(32),
+            &[ZERO_HASH.to_string(), "cc".repeat(32)],
+            &["dd".repeat(32)],
+        ));
+    }
+
+    // ── Helper Functions ───────────────────────────────
+
+    #[test]
+    fn test_poseidon_hash_deterministic() {
+        setup_context(&alice(), 0);
+        let h1 = poseidon_hash_hex("aa", "bb");
+        let h2 = poseidon_hash_hex("aa", "bb");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_poseidon_hash_distinct_inputs() {
+        setup_context(&alice(), 0);
+        let h1 = poseidon_hash_hex("aa", "bb");
+        let h2 = poseidon_hash_hex("bb", "aa");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_zero_hash_level_zero() {
+        let z = zero_hash(0);
+        assert_eq!(z, ZERO_HASH);
+    }
+
+    #[test]
+    fn test_zero_hash_levels_differ() {
+        setup_context(&alice(), 0);
+        let z0 = zero_hash(0);
+        let z1 = zero_hash(1);
+        let z2 = zero_hash(2);
+        assert_ne!(z0, z1);
+        assert_ne!(z1, z2);
+    }
+}
