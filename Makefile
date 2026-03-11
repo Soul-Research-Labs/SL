@@ -178,25 +178,25 @@ docker-logs:
 # ── Testnet Deployments ───────────────────────
 
 deploy-fuji:
-	forge script script/DeployAvalanche.s.sol --rpc-url $${FUJI_RPC_URL} --broadcast --verify
+	forge script scripts/deploy/DeployAvalanche.s.sol --rpc-url $${FUJI_RPC_URL} --broadcast --verify
 
 deploy-moonbase:
-	forge script script/DeployMoonbeam.s.sol --rpc-url $${MOONBASE_RPC_URL} --broadcast --verify
+	forge script scripts/deploy/DeployMoonbeam.s.sol --rpc-url $${MOONBASE_RPC_URL} --broadcast --verify
 
 deploy-astar:
-	forge script script/DeployAstar.s.sol --rpc-url $${SHIBUYA_RPC_URL} --broadcast --verify
+	forge script scripts/deploy/DeployAstar.s.sol --rpc-url $${SHIBUYA_RPC_URL} --broadcast --verify
 
 deploy-evmos:
-	forge script script/DeployEvmos.s.sol --rpc-url $${EVMOS_TESTNET_RPC_URL} --broadcast --verify
+	forge script scripts/deploy/DeployEvmos.s.sol --rpc-url $${EVMOS_TESTNET_RPC_URL} --broadcast --verify
 
 deploy-aurora:
-	forge script script/DeployAurora.s.sol --rpc-url $${AURORA_TESTNET_RPC_URL} --broadcast --verify
+	forge script scripts/deploy/DeployAurora.s.sol --rpc-url $${AURORA_TESTNET_RPC_URL} --broadcast --verify
 
 deploy-near:
-	bash script/deploy-near.sh
+	bash scripts/deploy/deploy-near.sh
 
 deploy-cosmwasm:
-	bash script/deploy-cosmwasm.sh
+	bash scripts/deploy/deploy-cosmwasm.sh
 
 # ── SDK Documentation ──────────────────────────
 
