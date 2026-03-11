@@ -39,26 +39,28 @@ validate_address "GOVERNANCE_TIMELOCK" "$GOVERNANCE_TIMELOCK"
 echo "Configuring subgraph.yaml for network=$NETWORK ..."
 
 # Use portable sed syntax (macOS + Linux)
-if [[ "$(uname)" == "Darwin" ]]; then
-  SED="sed -i ''"
-else
-  SED="sed -i"
-fi
+sedi() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
 
 # Replace network
-$SED "s|network: .*|network: ${NETWORK}|g" "$SUBGRAPH_YAML"
+sedi "s|network: .*|network: ${NETWORK}|g" "$SUBGRAPH_YAML"
 
 # Replace PrivacyPool address & startBlock (first data source)
-$SED "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${PRIVACY_POOL}\"|" "$SUBGRAPH_YAML"
-$SED "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
+sedi "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${PRIVACY_POOL}\"|" "$SUBGRAPH_YAML"
+sedi "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
 
 # Replace EpochManager address & startBlock (second data source)
-$SED "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${EPOCH_MANAGER}\"|" "$SUBGRAPH_YAML"
-$SED "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
+sedi "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${EPOCH_MANAGER}\"|" "$SUBGRAPH_YAML"
+sedi "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
 
 # Replace GovernanceTimelock address & startBlock (third data source)
-$SED "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${GOVERNANCE_TIMELOCK}\"|" "$SUBGRAPH_YAML"
-$SED "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
+sedi "s|address: \"0x0000000000000000000000000000000000000000\" # Replace with deployed address|address: \"${GOVERNANCE_TIMELOCK}\"|" "$SUBGRAPH_YAML"
+sedi "0,/startBlock: 1 # Replace with deployment block number/{s|startBlock: 1 # Replace with deployment block number|startBlock: ${START_BLOCK}|}" "$SUBGRAPH_YAML"
 
 echo ""
 echo "Done. Updated subgraph.yaml:"
