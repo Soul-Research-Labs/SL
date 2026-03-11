@@ -8,11 +8,20 @@ services:
     restart: unless-stopped
     env_file: ../.env
     environment:
-      RUST_LOG: "relayer=debug,info"
+      RUST_LOG: ${RELAYER_LOG_LEVEL:-relayer=info}
+      RELAYER_METRICS_PORT: "9090"
+      RELAYER_HEALTH_PORT: "8081"
     volumes:
       - ../relayer/config.example.toml:/etc/relayer/config.toml:ro
     ports:
-      - "9090:9090"
+      - "${RELAYER_METRICS_PORT:-9090}:9090"
+      - "${RELAYER_HEALTH_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       prometheus:
         condition: service_started
@@ -24,10 +33,19 @@ services:
       dockerfile: docker/Dockerfile.lumora
     container_name: soul-lumora
     restart: unless-stopped
+    env_file: ../.env
     environment:
-      RUST_LOG: "lumora=debug,info"
+      RUST_LOG: ${LUMORA_LOG_LEVEL:-lumora=info}
+      LUMORA_PORT: "8080"
+      LUMORA_API_KEY: ${LUMORA_API_KEY:-}
     ports:
-      - "8080:8080"
+      - "${LUMORA_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # ── Prometheus (metrics collection) ──
   prometheus:
@@ -39,10 +57,10 @@ services:
       - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "9191:9090"
+      - "${PROMETHEUS_PORT:-9191}:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}"
 
   # ── Grafana (dashboards) ──
   grafana:
@@ -50,14 +68,15 @@ services:
     container_name: soul-grafana
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD env var is required}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
 
