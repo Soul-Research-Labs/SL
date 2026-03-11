@@ -74,10 +74,18 @@ Email: **security@soul-privacy.dev** (replace with your actual security contact)
 
 ### Audit Status
 
-- [ ] External audit (pending)
-- [ ] Formal verification via Certora (specs written, execution pending)
-- [ ] Fuzzing campaign (Foundry invariant tests)
-- [ ] Circuit audit (Noir + Halo2 soundness review)
+- [ ] External audit (pending — engage auditor for all Solidity core contracts,
+      bridge adapters, Substrate pallet, CosmWasm/NEAR contracts)
+- [ ] Formal verification via Certora (7 specs written, execution pending;
+      requires `CERTORAKEY`, run `make verify-all`)
+- [x] Fuzzing campaign — Foundry invariant tests (`InvariantPrivacyPool`),
+      MerkleTree fuzz (7 tests), DomainNullifier fuzz (9 tests),
+      PoseidonFuzz, PrivacyPoolFuzz
+- [ ] Circuit audit — Noir (5 circuits: deposit, transfer, withdraw,
+      nullifier_check, stealth) + Halo2 IPA (TransferCircuit, WithdrawCircuit)
+- [ ] MEV protection review — commit-reveal or private mempool integration
+      (see `docs/design/MEV_PROTECTION.md`)
+- [ ] Dependency audit — `cargo audit` for Rust, `npm audit` for SDK
 
 ---
 

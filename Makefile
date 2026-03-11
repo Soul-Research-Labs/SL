@@ -57,6 +57,38 @@ test-sol-registry:
 test-sol-libraries:
 	forge test --match-path test/Libraries.t.sol -vvv
 
+test-sol-fuzz:
+	forge test --match-path 'test/fuzz/*' -vvv
+
+test-sol-fuzz-deep:
+	FOUNDRY_FUZZ_RUNS=50000 forge test --match-path 'test/fuzz/*' -vvv
+
+test-sol-fork-fuji:
+	forge test --fork-url $${AVALANCHE_FUJI_RPC_URL} --match-contract FujiDeployForkTest -vvv
+
+test-sol-fork-moonbase:
+	forge test --fork-url $${MOONBASE_ALPHA_RPC_URL} --match-contract MoonbaseForkTest -vvv
+
+test-sol-fork-shibuya:
+	forge test --fork-url $${SHIBUYA_RPC_URL} --match-contract ShibuyaForkTest -vvv
+
+test-sol-fork-evmos:
+	forge test --fork-url $${EVMOS_TESTNET_RPC_URL} --match-contract EvmosForkTest -vvv
+
+test-sol-fork-aurora:
+	forge test --fork-url $${AURORA_TESTNET_RPC_URL} --match-contract AuroraForkTest -vvv
+
+test-sol-fork:
+	@echo "Running fork tests (set RPC URL env vars first)"
+	-$(MAKE) test-sol-fork-fuji
+	-$(MAKE) test-sol-fork-moonbase
+	-$(MAKE) test-sol-fork-shibuya
+	-$(MAKE) test-sol-fork-evmos
+	-$(MAKE) test-sol-fork-aurora
+
+test-sol-integration:
+	forge test --match-path 'test/integration/*' -vvv
+
 lint-sol:
 	forge fmt --check
 
@@ -114,6 +146,20 @@ lint-sdk:
 
 install-sdk:
 	cd sdk && npm install
+
+# ── Python SDK ────────────────────────────────
+
+test-python:
+	cd sdks/python && python -m pytest tests/ -v
+
+lint-python:
+	cd sdks/python && python -m ruff check src/ tests/
+
+# ── Subgraph ──────────────────────────────────
+
+subgraph-configure:
+	@echo "Set PRIVACY_POOL, EPOCH_MANAGER, GOVERNANCE_TIMELOCK, START_BLOCK, NETWORK"
+	cd subgraph && bash configure.sh
 
 # ── Docker ────────────────────────────────────
 
@@ -195,6 +241,10 @@ help:
 	@echo "  test-sol         Run Foundry tests"
 	@echo "  test-sol-gas     Gas benchmarks"
 	@echo "  test-sol-invariant  Invariant/fuzz tests"
+	@echo "  test-sol-fuzz    Fuzz tests (MerkleTree + DomainNullifier)"
+	@echo "  test-sol-fuzz-deep  Fuzz tests (50K runs)"
+	@echo "  test-sol-fork    Fork tests (all chains, set RPC URLs)"
+	@echo "  test-sol-integration  Integration lifecycle tests"
 	@echo ""
 	@echo "  build-rust       Build Rust workspace"
 	@echo "  test-rust        Run Rust tests"
@@ -206,6 +256,7 @@ help:
 	@echo "  build-sdk        Build TypeScript SDK"
 	@echo "  test-sdk         Run SDK Jest tests"
 	@echo "  install-sdk      npm install for SDK"
+	@echo "  test-python      Run Python SDK tests"
 	@echo ""
 	@echo "  docker-build     Build Docker images"
 	@echo "  docker-up        Start services (relayer + lumora + prometheus)"

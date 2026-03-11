@@ -1,6 +1,6 @@
 # SL Privacy Stack — Multi-Chain ZK Privacy Infrastructure
 
-> Cross-chain privacy middleware for Polkadot, Avalanche, and beyond.  
+> Cross-chain privacy middleware for Polkadot, Avalanche.  
 > Inspired by [ZAseon](https://github.com/ZAseon) and [Lumora](https://github.com/lumora-labs) — unified into a single privacy stack.
 
 ---
@@ -398,6 +398,18 @@ const result = await prover.proveDeposit({
 
 console.log(result.proof, result.publicInputs);
 ```
+
+## Documentation
+
+| Document                                               | Description                                                           |
+| ------------------------------------------------------ | --------------------------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)                   | Deep-dive into system design, proof pipeline, bridge architecture     |
+| [Getting Started](docs/GETTING_STARTED.md)             | Local development setup, first deposit walkthrough                    |
+| [Operational Runbook](docs/operations/RUNBOOK.md)      | Startup, health checks, emergency pause, incident response            |
+| [MEV Protection Design](docs/design/MEV_PROTECTION.md) | Commit-reveal deposits, private mempool integration                   |
+| [ADRs](docs/decisions/)                                | Architecture decision records                                         |
+| [Security Policy](SECURITY.md)                         | Vulnerability reporting, proof verification matrix, known limitations |
+| [Contributing](CONTRIBUTING.md)                        | Development workflow, style guide, ADR/RFC process                    |
 
 ## Security Considerations
 

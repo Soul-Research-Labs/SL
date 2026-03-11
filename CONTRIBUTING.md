@@ -160,6 +160,57 @@ Deploy scripts live in `scripts/deploy/`. Each chain has its own script:
 | Aurora    | `DeployAurora.s.sol`    | `forge script` |
 | Near      | `deploy-near.sh`        | `near-cli-rs`  |
 
+## Architecture Decision Records (ADRs)
+
+Significant design decisions are tracked as ADRs in `docs/decisions/`.
+
+### When to Write an ADR
+
+- Changing the proof system or circuit design
+- Adding or removing a supported chain
+- Modifying the nullifier scheme or Merkle tree parameters
+- Changing bridge trust assumptions
+- Altering governance parameters or access control model
+
+### ADR Template
+
+Create `docs/decisions/NNNN-short-title.md`:
+
+```markdown
+# NNNN — Title
+
+**Status**: Proposed | Accepted | Deprecated | Superseded by NNNN
+**Date**: YYYY-MM-DD
+**Author**: @github-handle
+
+## Context
+
+What is the issue or problem that motivates this decision?
+
+## Decision
+
+What is the change being proposed?
+
+## Consequences
+
+What are the positive and negative implications?
+
+## Alternatives Considered
+
+What other options were evaluated?
+```
+
+### RFC Process for Protocol Changes
+
+For changes that affect the on-chain protocol (proof format, nullifier scheme,
+epoch parameters, bridge message format):
+
+1. Open a GitHub Discussion with the `rfc` label
+2. Include: motivation, detailed design, security analysis, migration plan
+3. Allow 2 weeks for community review
+4. Require approval from at least 2 core maintainers
+5. Record the outcome as an ADR
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
