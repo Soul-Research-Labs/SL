@@ -203,4 +203,168 @@ contract EpochCrossChainTest is Test {
         em.receiveRemoteEpochRoot(1284, 0, remoteRoot);
         assertEq(em.getRemoteEpochRoot(1284, 0), remoteRoot);
     }
+
+    /// Multi-chain epoch sync: Avalanche → Moonbeam → Astar
+    function test_multiChainEpochSync() public {
+        // Register nullifiers on "Avalanche" side
+        vm.startPrank(pool);
+        em.registerNullifier(keccak256("avax_n1"));
+        em.registerNullifier(keccak256("avax_n2"));
+        em.registerNullifier(keccak256("avax_n3"));
+        vm.stopPrank();
+
+        // Finalize Avalanche epoch
+        vm.warp(block.timestamp + 101);
+        em.finalizeEpoch();
+
+        // Receive Moonbeam epoch root (chain 1284)
+        bytes32 moonbeamRoot = keccak256("moonbeam_epoch_0_root");
+        vm.prank(bridge);
+        em.receiveRemoteEpochRoot(1284, 0, moonbeamRoot);
+
+        // Receive Astar epoch root (chain 592)
+        bytes32 astarRoot = keccak256("astar_epoch_0_root");
+        vm.prank(bridge);
+        em.receiveRemoteEpochRoot(592, 0, astarRoot);
+
+        // Verify all roots stored
+        assertEq(em.getRemoteEpochRoot(1284, 0), moonbeamRoot);
+        assertEq(em.getRemoteEpochRoot(592, 0), astarRoot);
+        assertEq(em.currentEpochId(), 1);
+
+        // Register more nullifiers in epoch 1
+        vm.startPrank(pool);
+        em.registerNullifier(keccak256("avax_n4"));
+        vm.stopPrank();
+
+        // Finalize epoch 1
+        vm.warp(block.timestamp + 202);
+        em.finalizeEpoch();
+        assertEq(em.currentEpochId(), 2);
+
+        // Receive epoch 1 roots from other chains
+        vm.startPrank(bridge);
+        em.receiveRemoteEpochRoot(1284, 1, keccak256("moonbeam_epoch_1"));
+        em.receiveRemoteEpochRoot(592, 1, keccak256("astar_epoch_1"));
+        vm.stopPrank();
+    }
+
+    /// Verify unauthorized bridge cannot submit epoch roots
+    function test_unauthorizedBridgeReverts() public {
+        address fakeBridge = address(0xDEAD);
+        bytes32 fakeRoot = keccak256("fake");
+
+        vm.prank(fakeBridge);
+        vm.expectRevert();
+        em.receiveRemoteEpochRoot(1284, 0, fakeRoot);
+    }
+
+    /// Zero root submissions should be rejected
+    function test_zeroRootRejected() public {
+        vm.prank(bridge);
+        vm.expectRevert();
+        em.receiveRemoteEpochRoot(1284, 0, bytes32(0));
+    }
+}
+
+/// @title Integration test: full multi-deposit batch with epoch finalization
+contract BatchDepositEpochTest is Test {
+    PrivacyPool pool;
+    EpochManager em;
+    IntegrationMockVerifier verifier;
+
+    uint256 constant CHAIN_ID = 43113;
+    uint256 constant APP_ID = 1;
+
+    function setUp() public {
+        verifier = new IntegrationMockVerifier();
+        em = new EpochManager(50, CHAIN_ID);
+        pool = new PrivacyPool(
+            address(verifier),
+            address(em),
+            CHAIN_ID,
+            APP_ID,
+            address(this),
+            address(0)
+        );
+        em.authorizePool(address(pool));
+    }
+
+    /// Multiple users depositing, then transfers, then withdrawals across
+    /// epoch boundaries — verifying pool balance invariant.
+    function test_multiUserLifecycle() public {
+        address[3] memory users = [
+            address(0x1001),
+            address(0x1002),
+            address(0x1003)
+        ];
+
+        // Fund users
+        for (uint256 i = 0; i < 3; i++) {
+            vm.deal(users[i], 10 ether);
+        }
+
+        // === Epoch 0: Multiple deposits ===
+        uint256 totalDeposited = 0;
+        for (uint256 i = 0; i < 3; i++) {
+            bytes32 commitment = keccak256(abi.encodePacked("deposit", i));
+            uint256 amount = (i + 1) * 1 ether;
+            vm.prank(users[i]);
+            pool.deposit{value: amount}(commitment, amount);
+            totalDeposited += amount;
+        }
+
+        // Verify pool balance = sum of deposits
+        assertEq(pool.poolBalance(), totalDeposited);
+        assertEq(pool.getNextLeafIndex(), 3);
+
+        // === Finalize epoch 0 ===
+        vm.warp(block.timestamp + 51);
+        em.finalizeEpoch();
+
+        // === Epoch 1: Transfer ===
+        bytes32 root = pool.getLatestRoot();
+        bytes32[2] memory tNullifiers = [
+            keccak256("batch_tn0"),
+            keccak256("batch_tn1")
+        ];
+        bytes32[2] memory tOutputs = [
+            keccak256("batch_to0"),
+            keccak256("batch_to1")
+        ];
+        bytes memory proof = new bytes(768);
+        proof[0] = 0x01;
+
+        pool.transfer(proof, root, tNullifiers, tOutputs, CHAIN_ID, APP_ID);
+
+        // Pool balance unchanged (no value leaves in transfer)
+        assertEq(pool.poolBalance(), totalDeposited);
+
+        // === Epoch 1: Withdrawal ===
+        root = pool.getLatestRoot();
+        bytes32[2] memory wNullifiers = [
+            keccak256("batch_wn0"),
+            keccak256("batch_wn1")
+        ];
+        bytes32[2] memory wOutputs = [
+            keccak256("batch_wo0"),
+            keccak256("batch_wo1")
+        ];
+
+        address payable recipient = payable(address(0x9999));
+        uint256 withdrawAmount = 2 ether;
+        uint256 recipientBefore = recipient.balance;
+
+        pool.withdraw(
+            proof,
+            root,
+            wNullifiers,
+            wOutputs,
+            recipient,
+            withdrawAmount
+        );
+
+        assertEq(recipient.balance, recipientBefore + withdrawAmount);
+        assertEq(pool.poolBalance(), totalDeposited - withdrawAmount);
+    }
 }
