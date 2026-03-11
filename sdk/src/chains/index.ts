@@ -236,3 +236,73 @@ export function getTestnetChains(): ChainConfig[] {
       c.name.toLowerCase().includes("shibuya"),
   );
 }
+
+// ── Address Loading ──────────────────────────────────────────────────
+
+/**
+ * Load contract addresses from a JSON file produced by deployment scripts
+ * (e.g. `deployments/avalanche/addresses.json`) and return a populated
+ * `ChainContracts` object.
+ *
+ * Expected JSON shape:
+ * ```json
+ * {
+ *   "contracts": {
+ *     "PrivacyPool": "0x...",
+ *     "EpochManager": "0x...",
+ *     "ProofVerifier": "0x...",
+ *     "BridgeAdapter": "0x..."
+ *   }
+ * }
+ * ```
+ */
+export function contractsFromDeployment(
+  json: Record<string, unknown>,
+): ChainContracts {
+  const c = json.contracts as Record<string, string> | undefined;
+  if (!c) return { ...ZERO };
+  return {
+    privacyPool: c.PrivacyPool ?? ZERO.privacyPool,
+    epochManager: c.EpochManager ?? ZERO.epochManager,
+    proofVerifier: c.ProofVerifier ?? ZERO.proofVerifier,
+    bridgeAdapter: c.BridgeAdapter ?? ZERO.bridgeAdapter,
+  };
+}
+
+/**
+ * Override a chain config's contract addresses from environment variables.
+ * Variable naming: `SOUL_<CHAIN_KEY>_<CONTRACT>`, for example:
+ *   SOUL_AVALANCHE_FUJI_PRIVACY_POOL=0x...
+ *   SOUL_AVALANCHE_FUJI_EPOCH_MANAGER=0x...
+ *
+ * Returns a new `ChainConfig` with overridden addresses (originals kept for
+ * any variable that is not set).
+ */
+export function withEnvOverrides(
+  chainKey: string,
+  config: ChainConfig,
+  env: Record<string, string | undefined> = typeof process !== "undefined"
+    ? process.env
+    : {},
+): ChainConfig {
+  const prefix = `SOUL_${chainKey.toUpperCase()}_`;
+  const get = (suffix: string): string | undefined => env[`${prefix}${suffix}`];
+
+  return {
+    ...config,
+    rpcUrl: get("RPC_URL") ?? config.rpcUrl,
+    contracts: {
+      privacyPool: get("PRIVACY_POOL") ?? config.contracts.privacyPool,
+      epochManager: get("EPOCH_MANAGER") ?? config.contracts.epochManager,
+      proofVerifier: get("PROOF_VERIFIER") ?? config.contracts.proofVerifier,
+      bridgeAdapter: get("BRIDGE_ADAPTER") ?? config.contracts.bridgeAdapter,
+    },
+  };
+}
+
+/**
+ * Returns true if the given contracts still contain zero-address placeholders.
+ */
+export function hasPlaceholderAddresses(contracts: ChainContracts): boolean {
+  return Object.values(contracts).some((addr) => addr === ZERO.privacyPool);
+}
