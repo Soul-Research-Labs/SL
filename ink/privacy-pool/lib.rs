@@ -600,6 +600,41 @@ mod privacy_pool {
             test::default_accounts::<ink::env::DefaultEnvironment>()
         }
 
+        /// Build a valid proof that passes `verify_proof_structure`.
+        fn make_valid_proof(
+            nullifiers: &[[u8; 32]; 2],
+            output_commitments: &[[u8; 32]; 2],
+        ) -> Vec<u8> {
+            // Body: 160 bytes (commitment=64, eval=32, 1 round=64)
+            let body = [0xab_u8; 160];
+
+            // Encode inputs: 2 nullifiers + 2 outputs = 128 bytes
+            let mut inputs = [0u8; 128];
+            inputs[..32].copy_from_slice(&nullifiers[0]);
+            inputs[32..64].copy_from_slice(&nullifiers[1]);
+            inputs[64..96].copy_from_slice(&output_commitments[0]);
+            inputs[96..128].copy_from_slice(&output_commitments[1]);
+
+            // binding = keccak256("Halo2-IPA-bind" || inputs || body)
+            let mut transcript = Vec::with_capacity(14 + 128 + body.len());
+            transcript.extend_from_slice(b"Halo2-IPA-bind");
+            transcript.extend_from_slice(&inputs);
+            transcript.extend_from_slice(&body);
+
+            let mut binding = [0u8; 32];
+            ink::env::hash::CryptoHash::hash::<ink::env::hash::Keccak256>(
+                &transcript,
+                &mut binding,
+            );
+
+            let mut proof = Vec::with_capacity(32 + body.len());
+            proof.extend_from_slice(&binding);
+            proof.extend_from_slice(&body);
+            proof
+        }
+
+        // ── Initialization ─────────────────────
+
         #[ink::test]
         fn new_initializes_correctly() {
             let pool = PrivacyPool::new(100);
@@ -608,6 +643,8 @@ mod privacy_pool {
             assert_eq!(pool.get_pool_balance(), 0);
             assert_eq!(pool.get_current_root(), ZERO_VALUE);
         }
+
+        // ── Deposit ────────────────────────────
 
         #[ink::test]
         fn deposit_works() {
@@ -645,10 +682,241 @@ mod privacy_pool {
         }
 
         #[ink::test]
+        fn multiple_deposits_update_state() {
+            let mut pool = PrivacyPool::new(100);
+            for i in 1u8..=5 {
+                ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(500);
+                assert!(pool.deposit([i; 32]).is_ok());
+            }
+            assert_eq!(pool.get_next_leaf_index(), 5);
+            assert_eq!(pool.get_pool_balance(), 2500);
+        }
+
+        #[ink::test]
+        fn deposit_changes_root_each_time() {
+            let mut pool = PrivacyPool::new(100);
+            let root_before = pool.get_current_root();
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
+            pool.deposit([10u8; 32]).unwrap();
+            let root_after_1 = pool.get_current_root();
+            assert_ne!(root_before, root_after_1);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
+            pool.deposit([11u8; 32]).unwrap();
+            let root_after_2 = pool.get_current_root();
+            assert_ne!(root_after_1, root_after_2);
+        }
+
+        // ── Transfer ───────────────────────────
+
+        #[ink::test]
+        fn transfer_works() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            let result = pool.transfer(proof, root, nullifiers, outputs);
+            assert!(result.is_ok());
+            assert_eq!(pool.get_next_leaf_index(), 3); // 1 deposit + 2 outputs
+            assert_eq!(pool.get_pool_balance(), 1000); // unchanged
+        }
+
+        #[ink::test]
+        fn transfer_double_spend_fails() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs1 = [[30u8; 32], [31u8; 32]];
+            let proof1 = make_valid_proof(&nullifiers, &outputs1);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert!(pool.transfer(proof1, root, nullifiers, outputs1).is_ok());
+
+            // Attempt re-use of same nullifiers
+            let root2 = pool.get_current_root();
+            let outputs2 = [[40u8; 32], [41u8; 32]];
+            let proof2 = make_valid_proof(&nullifiers, &outputs2);
+            assert_eq!(
+                pool.transfer(proof2, root2, nullifiers, outputs2),
+                Err(Error::NullifierAlreadySpent)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_unknown_root_fails() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+
+            let fake_root = [0xffu8; 32];
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(proof, fake_root, nullifiers, outputs),
+                Err(Error::UnknownRoot)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_invalid_proof_too_short() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(vec![0xab; 32], root, nullifiers, outputs),
+                Err(Error::InvalidProof)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_all_zero_proof_fails() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(vec![0u8; 192], root, nullifiers, outputs),
+                Err(Error::InvalidProof)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_duplicate_nullifiers_fails() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let dup_nul = [20u8; 32];
+            let nullifiers = [dup_nul, dup_nul];
+            let outputs = [[30u8; 32], [31u8; 32]];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(vec![0xab; 192], root, nullifiers, outputs),
+                Err(Error::InvalidProof)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_zero_nullifier_fails() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[0u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(vec![0xab; 192], root, nullifiers, outputs),
+                Err(Error::InvalidProof)
+            );
+        }
+
+        // ── Withdraw ───────────────────────────
+
+        #[ink::test]
+        fn withdraw_updates_balance() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(5000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            let accounts = default_accounts();
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            let result = pool.withdraw(proof, root, nullifiers, outputs, accounts.bob, 2000);
+            assert!(result.is_ok());
+            assert_eq!(pool.get_pool_balance(), 3000);
+        }
+
+        #[ink::test]
+        fn withdraw_insufficient_funds() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            let accounts = default_accounts();
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.withdraw(proof, root, nullifiers, outputs, accounts.bob, 999),
+                Err(Error::InsufficientFunds)
+            );
+        }
+
+        // ── Nullifiers ────────────────────────
+
+        #[ink::test]
         fn nullifier_not_spent_initially() {
             let pool = PrivacyPool::new(100);
             assert!(!pool.is_nullifier_spent([99u8; 32]));
         }
+
+        #[ink::test]
+        fn nullifier_spent_after_transfer() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+
+            let nul0 = [20u8; 32];
+            let nullifiers = [nul0, [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            pool.transfer(proof, root, nullifiers, outputs).unwrap();
+
+            assert!(pool.is_nullifier_spent(nul0));
+            assert!(pool.is_nullifier_spent([21u8; 32]));
+            assert!(!pool.is_nullifier_spent([99u8; 32]));
+        }
+
+        // ── Epoch Finalization ─────────────────
 
         #[ink::test]
         fn finalize_epoch_works() {
@@ -670,6 +938,18 @@ mod privacy_pool {
         }
 
         #[ink::test]
+        fn multiple_epoch_finalizations() {
+            let mut pool = PrivacyPool::new(100);
+            for expected_next in 1u32..=4 {
+                let result = pool.finalize_epoch();
+                assert_eq!(result, Ok(expected_next));
+            }
+            assert_eq!(pool.get_current_epoch(), 4);
+        }
+
+        // ── Cross-chain Sync ──────────────────
+
+        #[ink::test]
         fn sync_remote_root_governance_only() {
             let mut pool = PrivacyPool::new(100);
             let root = [42u8; 32];
@@ -686,6 +966,26 @@ mod privacy_pool {
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
             let result = pool.sync_remote_root(2100, 1, root);
             assert_eq!(result, Err(Error::NotGovernance));
+        }
+
+        #[ink::test]
+        fn remote_root_missing_returns_none() {
+            let pool = PrivacyPool::new(100);
+            assert_eq!(pool.get_remote_root(9999, 0), None);
+        }
+
+        #[ink::test]
+        fn sync_multiple_chains() {
+            let mut pool = PrivacyPool::new(100);
+            let root_a = [0xaa; 32];
+            let root_b = [0xbb; 32];
+
+            pool.sync_remote_root(43114, 0, root_a).unwrap(); // Avalanche
+            pool.sync_remote_root(1284, 0, root_b).unwrap(); // Moonbeam
+
+            assert_eq!(pool.get_remote_root(43114, 0), Some(root_a));
+            assert_eq!(pool.get_remote_root(1284, 0), Some(root_b));
+            assert_eq!(pool.get_remote_root(43114, 1), None); // different epoch
         }
     }
 }
