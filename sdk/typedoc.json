@@ -9,5 +9,17 @@
   "includeVersion": true,
   "categorizeByGroup": true,
   "searchInComments": true,
-  "plugin": ["typedoc-plugin-markdown"]
+  "plugin": ["typedoc-plugin-markdown"],
+  "hideGenerator": true,
+  "githubPages": false,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  },
+  "sort": ["source-order", "alphabetical"]
 }

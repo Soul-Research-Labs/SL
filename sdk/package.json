@@ -8,7 +8,9 @@
     "build": "tsc",
     "test": "jest",
     "lint": "eslint src/",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "docs:html": "typedoc --plugin none --out docs-html",
+    "docs:check": "typedoc --emit none"
   },
   "dependencies": {
     "viem": "^2.20.0"
