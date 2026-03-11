@@ -1,0 +1,112 @@
+groups:
+  - name: relayer_alerts
+    rules:
+      # Relay failure rate exceeds 10% in 15 minutes
+      - alert: RelayFailureRateHigh
+        expr: |
+          rate(relayer_relay_failures_total[15m])
+          / (rate(relayer_relays_dispatched_total[15m]) > 0)
+          > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: relayer
+        annotations:
+          summary: "Relay failure rate exceeds 10%"
+          description: "{{ $labels.instance }} relay failure rate is {{ $value | humanizePercentage }} over the last 15 minutes."
+
+      # No relays dispatched for 30 minutes (potential stall)
+      - alert: RelayStalled
+        expr: |
+          increase(relayer_relays_dispatched_total[30m]) == 0
+          and on() (increase(relayer_epochs_received_total[30m]) > 0)
+        for: 10m
+        labels:
+          severity: warning
+          component: relayer
+        annotations:
+          summary: "Relayer receiving epochs but not dispatching relays"
+          description: "{{ $labels.instance }} has received epochs in the last 30 minutes but dispatched zero relays."
+
+      # No epochs received for 1 hour (chain watcher down or chain stalled)
+      - alert: NoEpochsReceived
+        expr: increase(relayer_epochs_received_total[1h]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: relayer
+        annotations:
+          summary: "No epoch events received in 1 hour"
+          description: "{{ $labels.instance }} has not received any EpochFinalized events for over 1 hour. Check chain watcher connectivity."
+
+      # Registry submission failures increasing
+      - alert: RegistrySubmissionFailures
+        expr: increase(relayer_relay_failures_total{target="registry"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          component: relayer
+        annotations:
+          summary: "Multiple registry submission failures"
+          description: "{{ $labels.instance }} has {{ $value }} registry submission failures in the last 15 minutes."
+
+      # Health endpoint down
+      - alert: RelayerUnhealthy
+        expr: up{job="relayer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: relayer
+        annotations:
+          summary: "Relayer health endpoint unreachable"
+          description: "{{ $labels.instance }} relayer has been unreachable for 2 minutes."
+
+  - name: lumora_alerts
+    rules:
+      # Proof generation service down
+      - alert: LumoraUnhealthy
+        expr: up{job="lumora"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: lumora
+        annotations:
+          summary: "Lumora coprocessor health endpoint unreachable"
+          description: "{{ $labels.instance }} Lumora coprocessor is unreachable."
+
+      # Proof generation latency exceeds threshold
+      - alert: ProofGenerationSlow
+        expr: histogram_quantile(0.95, rate(lumora_proof_generation_seconds_bucket[10m])) > 120
+        for: 5m
+        labels:
+          severity: warning
+          component: lumora
+        annotations:
+          summary: "Proof generation P95 latency exceeds 2 minutes"
+          description: "{{ $labels.instance }} P95 proof generation latency is {{ $value | humanizeDuration }}."
+
+  - name: pool_alerts
+    rules:
+      # Epoch finalization delay (no epoch finalized in expected window)
+      - alert: EpochFinalizationDelayed
+        expr: |
+          time() - max(relayer_last_epoch_finalized_timestamp) > 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: privacy_pool
+        annotations:
+          summary: "No epoch finalized in the last hour"
+          description: "The last epoch finalization was {{ $value | humanizeDuration }} ago."
+
+      # Chain health degraded (one chain not receiving events)
+      - alert: ChainHealthDegraded
+        expr: |
+          increase(relayer_epochs_received_total[1h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: chain_watcher
+        annotations:
+          summary: "Chain {{ $labels.chain }} not producing epochs"
+          description: "No epoch events from chain {{ $labels.chain }} in the last hour."

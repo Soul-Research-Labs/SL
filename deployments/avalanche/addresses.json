@@ -1,0 +1,82 @@
+{
+  "network": "avalanche-fuji",
+  "chainId": 43113,
+  "deployedAt": null,
+  "deployer": null,
+  "contracts": {
+    "PrivacyPool": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "EpochManager": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "UniversalNullifierRegistry": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "Halo2SnarkVerifier": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "UltraHonkVerifier": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "GovernanceTimelock": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "MultiSigGovernance": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "ComplianceOracle": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "RelayerFeeVault": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "StealthAnnouncer": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "AvaxWarpAdapter": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "TeleporterAdapter": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    }
+  },
+  "constructorArgs": {
+    "PrivacyPool": {
+      "verifier": null,
+      "epochManager": null,
+      "domainChainId": 43113,
+      "domainAppId": 1,
+      "guardian": null,
+      "complianceOracle": null
+    },
+    "EpochManager": {
+      "epochDuration": 100,
+      "domainChainId": 43113
+    }
+  }
+}

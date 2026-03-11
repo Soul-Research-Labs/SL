@@ -1,0 +1,62 @@
+{
+  "network": "moonbase-alpha",
+  "chainId": 1287,
+  "deployedAt": null,
+  "deployer": null,
+  "contracts": {
+    "PrivacyPool": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "EpochManager": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "Halo2SnarkVerifier": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "GovernanceTimelock": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "ComplianceOracle": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "RelayerFeeVault": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "StealthAnnouncer": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    },
+    "XcmBridgeAdapter": {
+      "address": null,
+      "txHash": null,
+      "blockNumber": null
+    }
+  },
+  "constructorArgs": {
+    "PrivacyPool": {
+      "verifier": null,
+      "epochManager": null,
+      "domainChainId": 1287,
+      "domainAppId": 1,
+      "guardian": null,
+      "complianceOracle": null
+    },
+    "EpochManager": {
+      "epochDuration": 100,
+      "domainChainId": 1287
+    }
+  }
+}
