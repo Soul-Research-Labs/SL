@@ -1,9 +1,56 @@
+# ────────────────────────────────────────────────────────────
 # Soul Privacy Relayer — Example Configuration
-# Copy to config.toml and edit for your deployment.
+# ────────────────────────────────────────────────────────────
+#
+# Copy this file to config.toml and fill in the values.
+#
+# Environment variable interpolation:
+#   Prefix any value with "env:" to read from the environment at startup.
+#   Example: signer_key = "env:RELAYER_FUJI_SIGNER_KEY"
+#
+# SECURITY: Never commit config.toml with real private keys to version control.
+#   Use env vars or a secrets manager (Vault, AWS Secrets Manager, etc.).
+#
+# See docs/OPERATIONAL_RUNBOOK.md for deployment guidance.
+# ────────────────────────────────────────────────────────────
 
+# ── Global Settings ─────────────────────────────────────────
+
+# Prometheus metrics endpoint
 metrics_port = 9090
 
+# Logging level: trace, debug, info, warn, error
+log_level = "info"
+
+# Health-check HTTP endpoint (0 = disabled)
+health_port = 8080
+
+# Maximum concurrent relay transactions across all chains
+max_concurrent_relays = 8
+
+# Gas price safety cap (gwei). Relayer will skip relay if gas exceeds this.
+max_gas_price_gwei = 150
+
 # ── Chain Watchers ──────────────────────────────────────────
+#
+# Each [[chains]] entry configures a chain the relayer monitors and relays to.
+#
+# Required fields:
+#   chain_id                  — EVM chain ID
+#   name                      — Human-readable label (for logs/metrics)
+#   ws_rpc_url                — WebSocket RPC endpoint (for real-time event listening)
+#   http_rpc_url              — HTTP RPC endpoint (for tx submission)
+#   epoch_manager_address     — Deployed EpochManager contract address
+#   pool_address              — Deployed PrivacyPool contract address
+#   bridge_adapter_address    — Deployed bridge adapter contract address
+#   signer_key                — Hex private key (use "env:VAR_NAME" for safety)
+#
+# Optional fields:
+#   poll_interval_secs        — Block polling interval (default: 6)
+#   confirmation_blocks       — Blocks to wait before relaying (default: 2)
+#   gas_multiplier            — Gas estimate multiplier (default: 1.2)
+#   max_retry_attempts        — Failed tx retry count (default: 3)
+#   retry_delay_secs          — Seconds between retries (default: 10)
 
 [[chains]]
 chain_id = 43113
@@ -13,9 +60,12 @@ http_rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
 epoch_manager_address = "0x0000000000000000000000000000000000000000"
 pool_address = "0x0000000000000000000000000000000000000000"
 bridge_adapter_address = "0x0000000000000000000000000000000000000000"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_FUJI_SIGNER_KEY"
 poll_interval_secs = 6
 confirmation_blocks = 2
+gas_multiplier = 1.2
+max_retry_attempts = 3
+retry_delay_secs = 10
 
 [[chains]]
 chain_id = 1287
@@ -25,9 +75,12 @@ http_rpc_url = "https://rpc.api.moonbase.moonbeam.network"
 epoch_manager_address = "0x0000000000000000000000000000000000000000"
 pool_address = "0x0000000000000000000000000000000000000000"
 bridge_adapter_address = "0x0000000000000000000000000000000000000000"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_MOONBASE_SIGNER_KEY"
 poll_interval_secs = 12
 confirmation_blocks = 1
+gas_multiplier = 1.1
+max_retry_attempts = 3
+retry_delay_secs = 15
 
 [[chains]]
 chain_id = 81
@@ -37,9 +90,12 @@ http_rpc_url = "https://evm.shibuya.astar.network"
 epoch_manager_address = "0x0000000000000000000000000000000000000000"
 pool_address = "0x0000000000000000000000000000000000000000"
 bridge_adapter_address = "0x0000000000000000000000000000000000000000"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_SHIBUYA_SIGNER_KEY"
 poll_interval_secs = 12
 confirmation_blocks = 1
+gas_multiplier = 1.2
+max_retry_attempts = 3
+retry_delay_secs = 10
 
 [[chains]]
 chain_id = 9000
@@ -49,9 +105,12 @@ http_rpc_url = "https://eth.bd.evmos.dev:8545"
 epoch_manager_address = "0x0000000000000000000000000000000000000000"
 pool_address = "0x0000000000000000000000000000000000000000"
 bridge_adapter_address = "0x0000000000000000000000000000000000000000"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_EVMOS_SIGNER_KEY"
 poll_interval_secs = 6
 confirmation_blocks = 3
+gas_multiplier = 1.3
+max_retry_attempts = 5
+retry_delay_secs = 10
 
 [[chains]]
 chain_id = 1313161555
@@ -61,19 +120,35 @@ http_rpc_url = "https://testnet.aurora.dev"
 epoch_manager_address = "0x0000000000000000000000000000000000000000"
 pool_address = "0x0000000000000000000000000000000000000000"
 bridge_adapter_address = "0x0000000000000000000000000000000000000000"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_AURORA_SIGNER_KEY"
 poll_interval_secs = 2
 confirmation_blocks = 5
+gas_multiplier = 1.2
+max_retry_attempts = 3
+retry_delay_secs = 5
 
 # ── Universal Nullifier Registry ────────────────────────────
+#
+# The canonical nullifier registry used for cross-chain double-spend prevention.
+# The relayer posts nullifier roots from each chain to the registry.
 
 [registry]
 chain_id = 43113
 address = "0x0000000000000000000000000000000000000000"
 rpc_url = "https://api.avax-test.network/ext/bc/C/rpc"
-signer_key = "YOUR_PRIVATE_KEY_HEX"
+signer_key = "env:RELAYER_REGISTRY_SIGNER_KEY"
 
 # ── Metadata Resistance ────────────────────────────────────
+#
+# Configures anti-correlation defenses to prevent transaction graph analysis.
+#
+# jitter_enabled      — Add random delay before relaying to decorrelate timing.
+# max_jitter_ms       — Maximum random delay (ms). Higher = better privacy, slower UX.
+# batching_enabled    — Aggregate multiple relay operations into single batches.
+# batch_size          — Minimum relay ops to include per batch.
+# batch_timeout_secs  — Max time to wait for batch_size before flushing.
+# dummy_padding_enabled — Insert dummy transactions to further obscure real traffic patterns.
+# dummy_interval_secs — Interval between dummy transactions (only if dummy_padding_enabled).
 
 [metadata_resistance]
 jitter_enabled = true
@@ -82,3 +157,15 @@ batching_enabled = true
 batch_size = 10
 batch_timeout_secs = 30
 dummy_padding_enabled = false
+dummy_interval_secs = 60
+
+# ── Alerting (Optional) ────────────────────────────────────
+#
+# Configure webhook alerts for operational events.
+#
+# [alerting]
+# webhook_url = "env:RELAYER_ALERT_WEBHOOK"
+# alert_on_relay_failure = true
+# alert_on_high_gas = true
+# alert_on_chain_disconnect = true
+# alert_cooldown_secs = 300
