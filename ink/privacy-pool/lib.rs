@@ -454,8 +454,12 @@ mod privacy_pool {
         ///   [96..128):  Evaluation scalar (32 bytes)
         ///   [128..N):   IPA rounds (each 64 bytes)
         ///
-        /// NOTE: Full IPA MSM requires Pasta curve arithmetic. This verifier
-        /// performs structural + binding validation suitable for testnet.
+        /// ## Production upgrade path
+        ///
+        /// Replace this function body with a cross-contract call to a deployed
+        /// Halo2/Groth16 verifier ink! contract, or integrate `ark-groth16`
+        /// compiled to WASM. The binding tag check should be retained as an
+        /// additional transcript integrity assertion.
         fn verify_proof_structure(
             proof: &[u8],
             nullifiers: &[[u8; 32]; 2],

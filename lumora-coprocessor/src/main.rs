@@ -93,12 +93,25 @@ async fn main() {
         } => {
             info!(port, %bind, workers, "Starting Lumora coprocessor HTTP service");
 
-            // Initialize proof generator with empty proving keys.
-            // In production, load from SRS ceremony artifacts on disk.
+            // Initialize proof generator with proving keys.
+            // In production, load serialized keys from SRS ceremony artifacts:
+            //   let transfer_pk = std::fs::read("keys/transfer.pk")
+            //       .expect("Transfer proving key not found at keys/transfer.pk");
+            //   let withdraw_pk = std::fs::read("keys/withdraw.pk")
+            //       .expect("Withdraw proving key not found at keys/withdraw.pk");
+            //   let snark_pk = std::fs::read("keys/snark_wrapper.pk").ok();
+            //
+            // For development/testnet, use placeholder keys.
+            // The ProofGenerator will produce structurally valid but
+            // cryptographically non-binding proofs with placeholder keys.
+            let transfer_pk = load_key_or_placeholder("keys/transfer.pk", 32);
+            let withdraw_pk = load_key_or_placeholder("keys/withdraw.pk", 32);
+            let snark_pk = load_key_optional("keys/snark_wrapper.pk");
+
             let generator = Arc::new(ProofGenerator::new(
-                vec![1u8; 32], // placeholder transfer PK
-                vec![1u8; 32], // placeholder withdraw PK
-                Some(vec![1u8; 32]), // placeholder SNARK wrapper PK
+                transfer_pk,
+                withdraw_pk,
+                snark_pk,
             ));
 
             let app = build_router(generator);
@@ -143,9 +156,9 @@ async fn main() {
             };
 
             let generator = ProofGenerator::new(
-                vec![1u8; 32],
-                vec![1u8; 32],
-                Some(vec![1u8; 32]),
+                load_key_or_placeholder("keys/transfer.pk", 32),
+                load_key_or_placeholder("keys/withdraw.pk", 32),
+                load_key_optional("keys/snark_wrapper.pk"),
             );
 
             let proof_type = request
@@ -222,6 +235,39 @@ async fn main() {
             println!("prover: halo2");
             println!("snark_wrapper: groth16");
             println!("circuit_version: 0.1.0");
+        }
+    }
+}
+
+// ── Key Loading Helpers ────────────────────────────────────────────────────
+
+/// Attempt to load a proving key from `path`. If the file exists, return its
+/// contents; otherwise return a zero-filled vector of `placeholder_size` bytes
+/// suitable for development / testnet mode.
+fn load_key_or_placeholder(path: &str, placeholder_size: usize) -> Vec<u8> {
+    match std::fs::read(path) {
+        Ok(data) => {
+            info!(path, bytes = data.len(), "Loaded proving key from disk");
+            data
+        }
+        Err(_) => {
+            info!(path, "Proving key not found — using {placeholder_size}-byte placeholder (testnet mode)");
+            vec![0u8; placeholder_size]
+        }
+    }
+}
+
+/// Attempt to load an optional key (e.g. Groth16 SNARK wrapper).
+/// Returns `None` when the file does not exist.
+fn load_key_optional(path: &str) -> Option<Vec<u8>> {
+    match std::fs::read(path) {
+        Ok(data) => {
+            info!(path, bytes = data.len(), "Loaded optional key from disk");
+            Some(data)
+        }
+        Err(_) => {
+            info!(path, "Optional key not found — SNARK wrapper disabled");
+            None
         }
     }
 }

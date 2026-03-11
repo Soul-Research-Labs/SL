@@ -31,7 +31,11 @@ const PROOF_ALIGNMENT: usize = 32;
 
 /// Set to `false` to enable mainnet deployment after VK ceremony finalization.
 /// When `true`, an additional mainnet chain ID check is applied as a safety net.
-const TESTNET_ONLY: bool = false;
+///
+/// SECURITY: This flag MUST remain `true` until real Halo2 IPA verification
+/// keys have been generated from the production SRS ceremony and integrated
+/// into the `verify_halo2_ipa_proof` function below.
+const TESTNET_ONLY: bool = true;
 
 /// Verify a transfer ZK proof.
 ///

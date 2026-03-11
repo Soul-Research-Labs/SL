@@ -194,9 +194,8 @@ impl PrivacyPool {
         assert!(self.is_known_root(&merkle_root), "Unknown Merkle root");
         self.check_and_spend_nullifiers(&nullifiers);
 
-        // Verify ZK proof
         assert!(
-            verify_proof_placeholder(&proof, &merkle_root, &nullifiers, &output_commitments),
+            verify_proof_binding(&proof, &merkle_root, &nullifiers, &output_commitments),
             "Invalid ZK proof"
         );
 
@@ -237,7 +236,7 @@ impl PrivacyPool {
         self.check_and_spend_nullifiers(&nullifiers);
 
         assert!(
-            verify_proof_placeholder(&proof, &merkle_root, &nullifiers, &output_commitments),
+            verify_proof_binding(&proof, &merkle_root, &nullifiers, &output_commitments),
             "Invalid ZK proof"
         );
 
@@ -479,9 +478,13 @@ impl PrivacyPool {
 /// - Merkle root is non-zero
 /// - Binding tag matches recomputed value
 ///
-/// NOTE: Full IPA MSM (Pasta curve) verification requires a WASM-compiled
-/// Pasta library. This verifier provides structural + binding validation.
-fn verify_proof_placeholder(
+/// ## Production upgrade path
+///
+/// Replace this function body with a call to `near_groth16_verify` host
+/// function (available on NEAR since protocol 63) or a WASM-compiled
+/// BN254 Groth16 verifier (e.g., `ark-groth16`). The binding tag check
+/// should be retained as an additional transcript integrity assertion.
+fn verify_proof_binding(
     proof: &str,
     merkle_root: &str,
     nullifiers: &[String],
@@ -577,8 +580,15 @@ fn compute_nullifier_root(nullifiers: &[String]) -> String {
 ///
 /// Uses NEAR's native keccak256 with a "Poseidon" domain tag to provide
 /// a deterministic, collision-resistant hash aligned across all privacy
-/// pool deployments. For mainnet, replace with a WASM-compiled BN254
-/// Poseidon (e.g., light-poseidon) for exact circuit alignment.
+/// pool deployments.
+///
+/// ## Production upgrade path
+///
+/// Replace with `light-poseidon` crate compiled to WASM for exact BN254
+/// field-arithmetic alignment with `PoseidonHasher.sol` and the Halo2
+/// circuit constraints. The domain tag approach ensures collision resistance
+/// but produces different roots than on-chain Solidity Poseidon — breaking
+/// cross-chain proof verification on mainnet.
 fn poseidon_hash_hex(left: &str, right: &str) -> String {
     let mut data = Vec::with_capacity(8 + left.len() + right.len());
     data.extend_from_slice(b"Poseidon");

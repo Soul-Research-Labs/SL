@@ -225,9 +225,10 @@ fn execute_transfer(
     // Check and spend nullifiers
     check_and_spend_nullifiers(deps, &nullifiers)?;
 
-    // Verify ZK proof
-    // TODO: Replace with actual Halo2→SNARK verification
-    if !verify_proof_placeholder(&proof, &merkle_root, &nullifiers, &output_commitments) {
+    // Verify ZK proof: structural + Fiat-Shamir binding validation.
+    // Production: integrate a WASM-compiled Halo2/Groth16 verifier crate
+    // (e.g., groth16-solana adapted for CosmWasm, or bellman-ce).
+    if !verify_proof_binding(&proof, &merkle_root, &nullifiers, &output_commitments) {
         return Err(ContractError::InvalidProof {});
     }
 
@@ -268,7 +269,7 @@ fn execute_withdraw(
 
     check_and_spend_nullifiers(deps, &nullifiers)?;
 
-    if !verify_proof_placeholder(&proof, &merkle_root, &nullifiers, &output_commitments) {
+    if !verify_proof_binding(&proof, &merkle_root, &nullifiers, &output_commitments) {
         return Err(ContractError::InvalidProof {});
     }
 
@@ -518,9 +519,17 @@ fn compute_nullifier_root(nullifiers: &[String]) -> String {
 ///   [192..256): Evaluation scalar (32 bytes)
 ///   [256..N):   IPA rounds, each 128 hex chars (64 bytes)
 ///
-/// NOTE: Full IPA MSM (Pasta curve) verification requires a WASM-compiled
-/// Pasta library. This verifier provides structural + binding validation.
-fn verify_proof_placeholder(
+/// ## Production upgrade path
+///
+/// Replace this function body with a call to a WASM-compiled Groth16/Halo2
+/// verifier. Candidates:
+///   - `ark-groth16` compiled to `wasm32-unknown-unknown`
+///   - `bellman-ce` BN254 verifier
+///   - Custom Halo2 IPA verifier over Pasta curves
+///
+/// The binding tag check below is retained in production as an
+/// additional transcript integrity assertion.
+fn verify_proof_binding(
     proof: &str,
     merkle_root: &str,
     nullifiers: &[String; 2],
@@ -600,11 +609,19 @@ fn verify_proof_placeholder(
     binding_hex == expected_hex
 }
 
-/// Poseidon hash placeholder using SHA-256.
+/// Poseidon hash — domain-separated hash for ZK-compatible Merkle trees.
 ///
-/// SHA-256 is cryptographically secure and available natively in CosmWasm.
-/// In production, replace with a Poseidon implementation compiled to Wasm
-/// for ZK-circuit alignment.
+/// Currently uses SHA-256 as a cryptographically secure stand-in.
+/// For production, replace with a BN254 Poseidon implementation compiled
+/// to `wasm32-unknown-unknown`. Candidates:
+///   - `light-poseidon` crate (used in lumora-coprocessor) with `no_std`
+///   - `poseidon-rs` with BN254 field arithmetic
+///   - Custom T=3 Poseidon with canonical round constants from
+///     https://extgit.iaik.tugraz.at/krypto/hadeshash
+///
+/// The SHA-256 stand-in is acceptable for testnet but will produce
+/// different Merkle roots than the Solidity `PoseidonHasher.sol`,
+/// breaking cross-chain root verification on mainnet.
 fn poseidon_hash_hex(left: &str, right: &str) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();

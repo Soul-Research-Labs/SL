@@ -1,7 +1,19 @@
 //! Weight estimates for the Privacy Pool pallet.
 //!
-//! These are placeholder weights. In production, use `frame_benchmarking`
-//! to derive accurate weights from actual ZK verification execution times.
+//! These are conservative placeholder weights pending real benchmarking.
+//! Run the following to generate production weights:
+//!
+//! ```sh
+//! cargo build --release --features runtime-benchmarks
+//! frame-benchmarking-cli benchmark pallet \
+//!   --chain dev \
+//!   --pallet pallet_privacy_pool \
+//!   --extrinsic "*" \
+//!   --steps 50 \
+//!   --repeat 20 \
+//!   --output pallets/privacy-pool/src/weights.rs \
+//!   --template .maintain/frame-weight-template.hbs
+//! ```
 //!
 //! Expected real-world weights (based on Lumora benchmarks):
 //! - deposit: ~10ms (Merkle insertion only)
