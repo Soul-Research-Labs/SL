@@ -184,8 +184,11 @@ export class NoteWallet {
    * Compute a domain-separated V2 nullifier for a note.
    * nullifier = hash(hash(spendingKey, commitment), hash(chainId, appId))
    *
-   * This is a simplified client-side version using keccak256.
-   * The ZK circuit uses Poseidon — the results must match.
+   * Uses keccak256 as a stand-in for Poseidon. This is NOT circuit-compatible:
+   * the ZK circuits use BN254 Poseidon. Before production, replace with a
+   * JS Poseidon implementation (e.g. circomlibjs `buildPoseidon()`).
+   * The hash structure (domain-separated V2) is correct — only the
+   * hash function itself needs swapping.
    */
   computeNullifier(note: ShieldedNote, chainId: bigint, appId: bigint): Hex {
     const inner = keccak256(
@@ -195,6 +198,72 @@ export class NoteWallet {
       encodePacked(["uint256", "uint256"], [chainId, appId]),
     );
     return keccak256(encodePacked(["bytes32", "bytes32"], [inner, domain]));
+  }
+
+  // ── Encrypted Backup ───────────────────────────────
+
+  /**
+   * Encrypt all notes for backup using AES-256-GCM.
+   * Key is derived from the spending key via SHA-256.
+   * Returns an EncryptedNoteBackup suitable for storage.
+   */
+  async encryptNotes(): Promise<EncryptedNoteBackup> {
+    const plaintext = JSON.stringify(this.exportNotes());
+    const keyMaterial = hexToBytes(this.spendingKey);
+
+    // Derive a 256-bit encryption key from the spending key
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      await crypto.subtle.digest("SHA-256", keyMaterial),
+      "AES-GCM",
+      false,
+      ["encrypt"],
+    );
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      cryptoKey,
+      new TextEncoder().encode(plaintext),
+    );
+
+    return {
+      ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+      iv: bytesToBase64(iv),
+      version: 1,
+    };
+  }
+
+  /**
+   * Decrypt and import notes from an encrypted backup.
+   */
+  async decryptNotes(backup: EncryptedNoteBackup): Promise<void> {
+    if (backup.version !== 1) {
+      throw new Error(`Unsupported backup version: ${backup.version}`);
+    }
+
+    const keyMaterial = hexToBytes(this.spendingKey);
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      await crypto.subtle.digest("SHA-256", keyMaterial),
+      "AES-GCM",
+      false,
+      ["decrypt"],
+    );
+
+    const iv = base64ToBytes(backup.iv);
+    const ciphertext = base64ToBytes(backup.ciphertext);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      cryptoKey,
+      ciphertext,
+    );
+
+    const data = JSON.parse(new TextDecoder().decode(decrypted));
+    if (!Array.isArray(data)) {
+      throw new Error("Invalid backup: expected array of notes");
+    }
+    this.importNotes(data);
   }
 
   // ── Import / Export ────────────────────────────────
@@ -270,4 +339,32 @@ export class NoteWallet {
       ),
     );
   }
+}
+
+// ── Encoding Helpers ───────────────────────────────────
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
