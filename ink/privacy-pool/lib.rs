@@ -24,6 +24,12 @@ mod privacy_pool {
     /// Zero value used for empty Merkle tree leaves.
     const ZERO_VALUE: [u8; 32] = [0u8; 32];
 
+    /// Minimum blocks between commit and reveal for MEV protection.
+    const MIN_COMMIT_DELAY: u32 = 2;
+
+    /// Maximum blocks before a commit expires.
+    const MAX_COMMIT_DELAY: u32 = 100;
+
     // ── Types ──────────────────────────────────
 
     #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
@@ -33,6 +39,14 @@ mod privacy_pool {
         pub root: [u8; 32],
         pub finalized: bool,
         pub block_finalized: u32,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct CommitRecord {
+        pub depositor: AccountId,
+        pub block_number: u32,
+        pub revealed: bool,
     }
 
     // ── Events ─────────────────────────────────
@@ -79,6 +93,40 @@ mod privacy_pool {
         root: [u8; 32],
     }
 
+    #[ink(event)]
+    pub struct DepositCommitted {
+        #[ink(topic)]
+        depositor: AccountId,
+        commit_hash: [u8; 32],
+    }
+
+    #[ink(event)]
+    pub struct DepositRevealed {
+        #[ink(topic)]
+        commitment: [u8; 32],
+        leaf_index: u32,
+    }
+
+    #[ink(event)]
+    pub struct Paused {
+        #[ink(topic)]
+        by: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct Unpaused {
+        #[ink(topic)]
+        by: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct GovernanceTransferred {
+        #[ink(topic)]
+        old_governance: AccountId,
+        #[ink(topic)]
+        new_governance: AccountId,
+    }
+
     // ── Errors ─────────────────────────────────
 
     #[derive(Debug, PartialEq, Eq, Encode, Decode)]
@@ -93,6 +141,15 @@ mod privacy_pool {
         InsufficientFunds,
         EpochAlreadyFinalized,
         NotGovernance,
+        PoolPaused,
+        DuplicateCommit,
+        CommitNotFound,
+        RevealTooEarly,
+        CommitExpired,
+        AlreadyRevealed,
+        NotDepositor,
+        CommitNotExpired,
+        ZeroAddress,
     }
 
     pub type Result<T> = core::result::Result<T, Error>;
@@ -130,6 +187,12 @@ mod privacy_pool {
 
         /// Total pool balance for accounting.
         pool_balance: Balance,
+
+        /// Emergency pause flag.
+        paused: bool,
+
+        /// Pending deposit commits: commit_hash → CommitRecord.
+        pending_commits: Mapping<[u8; 32], CommitRecord>,
     }
 
     impl PrivacyPool {
@@ -154,6 +217,8 @@ mod privacy_pool {
                 epoch_start_block: current_block,
                 remote_roots: Mapping::new(),
                 pool_balance: 0,
+                paused: false,
+                pending_commits: Mapping::new(),
             };
 
             // Initialize epoch 0.
@@ -175,6 +240,9 @@ mod privacy_pool {
         /// Deposit native tokens and insert a commitment into the Merkle tree.
         #[ink(message, payable)]
         pub fn deposit(&mut self, commitment: [u8; 32]) -> Result<u32> {
+            if self.paused {
+                return Err(Error::PoolPaused);
+            }
             let value = self.env().transferred_value();
             if value == 0 {
                 return Err(Error::ZeroAmount);
@@ -224,6 +292,9 @@ mod privacy_pool {
             nullifiers: [[u8; 32]; 2],
             output_commitments: [[u8; 32]; 2],
         ) -> Result<()> {
+            if self.paused {
+                return Err(Error::PoolPaused);
+            }
             // 1. Verify root is known.
             if !self.is_known_root(merkle_root) {
                 return Err(Error::UnknownRoot);
@@ -282,6 +353,9 @@ mod privacy_pool {
             recipient: AccountId,
             amount: Balance,
         ) -> Result<()> {
+            if self.paused {
+                return Err(Error::PoolPaused);
+            }
             if !self.is_known_root(merkle_root) {
                 return Err(Error::UnknownRoot);
             }
@@ -338,8 +412,12 @@ mod privacy_pool {
         // ── Epoch Management ───────────────────
 
         /// Finalize the current epoch — snapshot the root and advance.
+        /// Governance only.
         #[ink(message)]
         pub fn finalize_epoch(&mut self) -> Result<u32> {
+            if self.env().caller() != self.governance {
+                return Err(Error::NotGovernance);
+            }
             let epoch_id = self.current_epoch;
             let epoch = self.epochs.get(epoch_id).unwrap();
 
@@ -402,6 +480,184 @@ mod privacy_pool {
             Ok(())
         }
 
+        // ── Commit-Reveal MEV Protection ───────
+
+        /// Phase 1: commit a deposit — hides the real commitment from
+        /// mempool observers to prevent front-running / sandwich attacks.
+        #[ink(message, payable)]
+        pub fn commit_deposit(&mut self, commit_hash: [u8; 32]) -> Result<()> {
+            if self.paused {
+                return Err(Error::PoolPaused);
+            }
+            if self.pending_commits.contains(commit_hash) {
+                return Err(Error::DuplicateCommit);
+            }
+            let value = self.env().transferred_value();
+            if value == 0 {
+                return Err(Error::ZeroAmount);
+            }
+
+            self.pending_commits.insert(
+                commit_hash,
+                &CommitRecord {
+                    depositor: self.env().caller(),
+                    block_number: self.env().block_number(),
+                    revealed: false,
+                },
+            );
+            self.pool_balance += value;
+
+            self.env().emit_event(DepositCommitted {
+                depositor: self.env().caller(),
+                commit_hash,
+            });
+
+            Ok(())
+        }
+
+        /// Phase 2: reveal the actual commitment after MIN_COMMIT_DELAY blocks.
+        #[ink(message)]
+        pub fn reveal_deposit(
+            &mut self,
+            commit_hash: [u8; 32],
+            commitment: [u8; 32],
+        ) -> Result<u32> {
+            let record = self
+                .pending_commits
+                .get(commit_hash)
+                .ok_or(Error::CommitNotFound)?;
+
+            if record.depositor != self.env().caller() {
+                return Err(Error::NotDepositor);
+            }
+            if record.revealed {
+                return Err(Error::AlreadyRevealed);
+            }
+
+            let current_block = self.env().block_number();
+            let elapsed = current_block.saturating_sub(record.block_number);
+            if elapsed < MIN_COMMIT_DELAY {
+                return Err(Error::RevealTooEarly);
+            }
+            if elapsed > MAX_COMMIT_DELAY {
+                return Err(Error::CommitExpired);
+            }
+
+            if self.leaves.contains(commitment) {
+                return Err(Error::DuplicateCommitment);
+            }
+
+            // Mark as revealed.
+            self.pending_commits.insert(
+                commit_hash,
+                &CommitRecord {
+                    depositor: record.depositor,
+                    block_number: record.block_number,
+                    revealed: true,
+                },
+            );
+
+            let leaf_index = self.next_leaf_index;
+            if leaf_index >= (1u32 << TREE_DEPTH) {
+                return Err(Error::TreeFull);
+            }
+
+            self.leaves.insert(commitment, &leaf_index);
+            self.nodes.insert((0, leaf_index), &commitment);
+            self.update_tree(leaf_index, commitment);
+            self.next_leaf_index = leaf_index + 1;
+            self.push_root(self.current_root);
+
+            self.env().emit_event(DepositRevealed {
+                commitment,
+                leaf_index,
+            });
+
+            Ok(leaf_index)
+        }
+
+        /// Reclaim an expired commit that was never revealed.
+        #[ink(message)]
+        pub fn reclaim_expired_commit(&mut self, commit_hash: [u8; 32]) -> Result<()> {
+            let record = self
+                .pending_commits
+                .get(commit_hash)
+                .ok_or(Error::CommitNotFound)?;
+
+            if record.revealed {
+                return Err(Error::AlreadyRevealed);
+            }
+
+            let elapsed = self
+                .env()
+                .block_number()
+                .saturating_sub(record.block_number);
+            if elapsed <= MAX_COMMIT_DELAY {
+                return Err(Error::CommitNotExpired);
+            }
+
+            // Remove the commit (mark revealed to prevent re-use).
+            self.pending_commits.insert(
+                commit_hash,
+                &CommitRecord {
+                    depositor: record.depositor,
+                    block_number: record.block_number,
+                    revealed: true,
+                },
+            );
+
+            // Refund is handled externally or via a separate mechanism.
+            // The pool_balance was already incremented during commit.
+
+            Ok(())
+        }
+
+        // ── Governance ─────────────────────────
+
+        /// Pause the pool. Governance only.
+        #[ink(message)]
+        pub fn pause(&mut self) -> Result<()> {
+            if self.env().caller() != self.governance {
+                return Err(Error::NotGovernance);
+            }
+            self.paused = true;
+            self.env().emit_event(Paused {
+                by: self.env().caller(),
+            });
+            Ok(())
+        }
+
+        /// Unpause the pool. Governance only.
+        #[ink(message)]
+        pub fn unpause(&mut self) -> Result<()> {
+            if self.env().caller() != self.governance {
+                return Err(Error::NotGovernance);
+            }
+            self.paused = false;
+            self.env().emit_event(Unpaused {
+                by: self.env().caller(),
+            });
+            Ok(())
+        }
+
+        /// Transfer governance to a new account. Governance only.
+        #[ink(message)]
+        pub fn transfer_governance(&mut self, new_governance: AccountId) -> Result<()> {
+            if self.env().caller() != self.governance {
+                return Err(Error::NotGovernance);
+            }
+            if new_governance == AccountId::from([0u8; 32]) {
+                return Err(Error::ZeroAddress);
+            }
+            let old = self.governance;
+            self.governance = new_governance;
+            self.env().emit_event(GovernanceTransferred {
+                old_governance: old,
+                new_governance,
+            });
+            Ok(())
+        }
+
         // ── Queries ────────────────────────────
 
         /// Get the current Merkle root.
@@ -438,6 +694,18 @@ mod privacy_pool {
         #[ink(message)]
         pub fn get_remote_root(&self, chain_id: u32, epoch_id: u32) -> Option<[u8; 32]> {
             self.remote_roots.get((chain_id, epoch_id))
+        }
+
+        /// Check if the pool is currently paused.
+        #[ink(message)]
+        pub fn is_paused(&self) -> bool {
+            self.paused
+        }
+
+        /// Get the governance account.
+        #[ink(message)]
+        pub fn get_governance(&self) -> AccountId {
+            self.governance
         }
 
         // ── Internal ───────────────────────────
@@ -986,6 +1254,136 @@ mod privacy_pool {
             assert_eq!(pool.get_remote_root(43114, 0), Some(root_a));
             assert_eq!(pool.get_remote_root(1284, 0), Some(root_b));
             assert_eq!(pool.get_remote_root(43114, 1), None); // different epoch
+        }
+
+        // ── Pause ──────────────────────────────
+
+        #[ink::test]
+        fn pause_blocks_deposit() {
+            let mut pool = PrivacyPool::new(100);
+            pool.pause().unwrap();
+            assert!(pool.is_paused());
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
+            assert_eq!(pool.deposit([1u8; 32]), Err(Error::PoolPaused));
+        }
+
+        #[ink::test]
+        fn unpause_restores_deposit() {
+            let mut pool = PrivacyPool::new(100);
+            pool.pause().unwrap();
+            pool.unpause().unwrap();
+            assert!(!pool.is_paused());
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
+            assert!(pool.deposit([1u8; 32]).is_ok());
+        }
+
+        #[ink::test]
+        fn pause_non_governance_fails() {
+            let mut pool = PrivacyPool::new(100);
+            let accounts = default_accounts();
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(pool.pause(), Err(Error::NotGovernance));
+        }
+
+        #[ink::test]
+        fn pause_blocks_transfer() {
+            let mut pool = PrivacyPool::new(100);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1000);
+            pool.deposit([10u8; 32]).unwrap();
+            let root = pool.get_current_root();
+            pool.pause().unwrap();
+
+            let nullifiers = [[20u8; 32], [21u8; 32]];
+            let outputs = [[30u8; 32], [31u8; 32]];
+            let proof = make_valid_proof(&nullifiers, &outputs);
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(
+                pool.transfer(proof, root, nullifiers, outputs),
+                Err(Error::PoolPaused)
+            );
+        }
+
+        // ── Governance Transfer ────────────────
+
+        #[ink::test]
+        fn transfer_governance_works() {
+            let mut pool = PrivacyPool::new(100);
+            let accounts = default_accounts();
+            assert_eq!(pool.get_governance(), accounts.alice);
+
+            pool.transfer_governance(accounts.bob).unwrap();
+            assert_eq!(pool.get_governance(), accounts.bob);
+        }
+
+        #[ink::test]
+        fn transfer_governance_non_gov_fails() {
+            let mut pool = PrivacyPool::new(100);
+            let accounts = default_accounts();
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(
+                pool.transfer_governance(accounts.charlie),
+                Err(Error::NotGovernance)
+            );
+        }
+
+        #[ink::test]
+        fn transfer_governance_zero_address_fails() {
+            let mut pool = PrivacyPool::new(100);
+            assert_eq!(
+                pool.transfer_governance(AccountId::from([0u8; 32])),
+                Err(Error::ZeroAddress)
+            );
+        }
+
+        // ── Commit-Reveal ──────────────────────
+
+        #[ink::test]
+        fn commit_deposit_stores_record() {
+            let mut pool = PrivacyPool::new(100);
+            let commit_hash = [0xcc; 32];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(500);
+            assert!(pool.commit_deposit(commit_hash).is_ok());
+            assert_eq!(pool.get_pool_balance(), 500);
+        }
+
+        #[ink::test]
+        fn duplicate_commit_fails() {
+            let mut pool = PrivacyPool::new(100);
+            let commit_hash = [0xcc; 32];
+
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(500);
+            pool.commit_deposit(commit_hash).unwrap();
+            assert_eq!(pool.commit_deposit(commit_hash), Err(Error::DuplicateCommit));
+        }
+
+        #[ink::test]
+        fn commit_zero_value_fails() {
+            let mut pool = PrivacyPool::new(100);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(0);
+            assert_eq!(pool.commit_deposit([0xcc; 32]), Err(Error::ZeroAmount));
+        }
+
+        #[ink::test]
+        fn commit_paused_fails() {
+            let mut pool = PrivacyPool::new(100);
+            pool.pause().unwrap();
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(500);
+            assert_eq!(pool.commit_deposit([0xcc; 32]), Err(Error::PoolPaused));
+        }
+
+        // ── Finalize Epoch Governance ──────────
+
+        #[ink::test]
+        fn finalize_epoch_non_governance_fails() {
+            let mut pool = PrivacyPool::new(100);
+            let accounts = default_accounts();
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(pool.finalize_epoch(), Err(Error::NotGovernance));
         }
     }
 }
