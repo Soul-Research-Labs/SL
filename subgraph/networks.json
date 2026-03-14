@@ -1,0 +1,74 @@
+{
+  "avalanche_fuji": {
+    "network": "avalanche",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "avalanche_mainnet": {
+    "network": "avalanche",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "moonbase_alpha": {
+    "network": "mbase",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "moonbeam": {
+    "network": "moonbeam",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "astar_shibuya": {
+    "network": "astar-zkevm-testnet",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "evmos_testnet": {
+    "network": "evmos-testnet",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "aurora_testnet": {
+    "network": "aurora-testnet",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "aurora_mainnet": {
+    "network": "aurora",
+    "startBlock": 1,
+    "contracts": {
+      "PrivacyPool": "0x0000000000000000000000000000000000000000",
+      "EpochManager": "0x0000000000000000000000000000000000000000",
+      "GovernanceTimelock": "0x0000000000000000000000000000000000000000"
+    }
+  }
+}

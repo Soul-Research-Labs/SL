@@ -1,0 +1,93 @@
+specVersion: 0.0.5
+description: Soul Privacy Stack — {{DEPLOYMENT_NAME}} event indexing
+repository: https://github.com/soul-privacy/soul-stack
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  - kind: ethereum/contract
+    name: PrivacyPool
+    network: {{NETWORK}}
+    source:
+      abi: PrivacyPool
+      address: "{{PRIVACY_POOL}}"
+      startBlock: {{START_BLOCK}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Deposit
+        - Transfer
+        - Withdrawal
+        - MerkleTreeState
+        - PoolMetrics
+        - NullifierSpent
+        - Depositor
+      abis:
+        - name: PrivacyPool
+          file: ../out/PrivacyPool.sol/PrivacyPool.json
+      eventHandlers:
+        - event: Deposit(indexed bytes32,uint256,uint256,uint256)
+          handler: handleDeposit
+        - event: Transfer(indexed bytes32,indexed bytes32,bytes32,bytes32,bytes32)
+          handler: handleTransfer
+        - event: Withdrawal(indexed bytes32,indexed bytes32,indexed address,uint256,bytes32)
+          handler: handleWithdrawal
+        - event: Paused(indexed address,string)
+          handler: handlePaused
+        - event: Unpaused(indexed address)
+          handler: handleUnpaused
+      file: ./src/privacy-pool.ts
+
+  - kind: ethereum/contract
+    name: EpochManager
+    network: {{NETWORK}}
+    source:
+      abi: EpochManager
+      address: "{{EPOCH_MANAGER}}"
+      startBlock: {{START_BLOCK}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Epoch
+        - EpochStartedEvent
+        - CrossChainSync
+      abis:
+        - name: EpochManager
+          file: ../out/EpochManager.sol/EpochManager.json
+      eventHandlers:
+        - event: EpochStarted(indexed uint256,uint256)
+          handler: handleEpochStarted
+        - event: EpochFinalized(indexed uint256,bytes32,uint256)
+          handler: handleEpochFinalized
+        - event: RemoteEpochRootReceived(indexed uint256,indexed uint256,bytes32)
+          handler: handleRemoteEpochRootReceived
+      file: ./src/epoch-manager.ts
+
+  - kind: ethereum/contract
+    name: GovernanceTimelock
+    network: {{NETWORK}}
+    source:
+      abi: GovernanceTimelock
+      address: "{{GOVERNANCE_TIMELOCK}}"
+      startBlock: {{START_BLOCK}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TimelockTransaction
+      abis:
+        - name: GovernanceTimelock
+          file: ../out/GovernanceTimelock.sol/GovernanceTimelock.json
+      eventHandlers:
+        - event: TransactionQueued(indexed bytes32,indexed address,uint256,bytes,uint256)
+          handler: handleTransactionQueued
+        - event: TransactionExecuted(indexed bytes32,indexed address,uint256,bytes)
+          handler: handleTransactionExecuted
+        - event: TransactionCancelled(indexed bytes32)
+          handler: handleTransactionCancelled
+      file: ./src/governance.ts
