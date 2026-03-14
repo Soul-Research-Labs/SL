@@ -59,11 +59,37 @@ export const BRIDGE_TOPOLOGY: BridgeEdge[] = [
     active: true,
   },
 
-  // Cosmos (IBC) — Evmos ↔ Osmosis (placeholder for future multi-chain IBC)
-  // No self-loop; IBC routes added when a second Cosmos chain is registered
+  // Cosmos (IBC) — bidirectional Evmos testnet ↔ Avalanche hub
+  {
+    source: "evmos_testnet",
+    destination: "avalanche_fuji",
+    protocol: "IBC",
+    estimatedLatency: 45,
+    active: true,
+  },
+  {
+    source: "evmos_testnet",
+    destination: "moonbase_alpha",
+    protocol: "IBC",
+    estimatedLatency: 60,
+    active: true,
+  },
 
-  // Near/Aurora ↔ NEAR mainnet (placeholder; Rainbow is Aurora→Ethereum)
-  // No self-loop; add actual cross-chain route when second chain is available
+  // Near/Aurora (Rainbow Bridge) — bidirectional Aurora ↔ Avalanche hub
+  {
+    source: "aurora_testnet",
+    destination: "avalanche_fuji",
+    protocol: "Rainbow",
+    estimatedLatency: 30,
+    active: true,
+  },
+  {
+    source: "aurora_testnet",
+    destination: "moonbase_alpha",
+    protocol: "Rainbow",
+    estimatedLatency: 60,
+    active: true,
+  },
 
   // Cross-ecosystem via hub (Avalanche ↔ Moonbeam via relayer)
   {
