@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import secrets
 from typing import Any
 
+from soul_privacy.poseidon import poseidon_hash, poseidon_hash_bytes
 from soul_privacy.types import Note
 
 
@@ -91,14 +91,13 @@ class NoteWallet:
     def compute_nullifier_v2(self, commitment: bytes) -> bytes:
         """Compute a domain-separated V2 nullifier.
 
-        V2: H(H(sk, cm), H(chain_id, app_id))
-        Uses SHA-256 as a stand-in; production should use Poseidon over BN254.
+        V2: Poseidon(Poseidon(sk, cm), Poseidon(chain_id, app_id))
         """
-        inner = hashlib.sha256(self._spending_key + commitment).digest()
-        domain = hashlib.sha256(
-            self._chain_id.to_bytes(32, "big") + self._app_id.to_bytes(32, "big")
-        ).digest()
-        return hashlib.sha256(inner + domain).digest()
+        inner = poseidon_hash_bytes(self._spending_key, commitment)
+        domain = poseidon_hash(
+            self._chain_id, self._app_id
+        ).to_bytes(32, "big")
+        return poseidon_hash_bytes(inner, domain)
 
     def export_wallet(self) -> str:
         """Export wallet state as JSON string."""
@@ -135,10 +134,8 @@ class NoteWallet:
 
     @staticmethod
     def _compute_commitment(pubkey: bytes, value: int, blinding: bytes) -> bytes:
-        """Compute note commitment = H(pubkey || value || blinding).
-
-        Uses SHA-256 as a stand-in; production should use Poseidon over BN254.
-        """
-        return hashlib.sha256(
-            pubkey + value.to_bytes(32, "big") + blinding
-        ).digest()
+        """Compute note commitment = Poseidon(Poseidon(pubkey, value), blinding)."""
+        pk_int = int.from_bytes(pubkey, "big")
+        bl_int = int.from_bytes(blinding, "big")
+        h = poseidon_hash(poseidon_hash(pk_int, value), bl_int)
+        return h.to_bytes(32, "big")
