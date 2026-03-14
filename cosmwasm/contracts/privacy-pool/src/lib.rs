@@ -16,6 +16,7 @@
 pub mod contract;
 pub mod error;
 pub mod msg;
+pub mod poseidon;
 pub mod state;
 
 pub use crate::error::ContractError;

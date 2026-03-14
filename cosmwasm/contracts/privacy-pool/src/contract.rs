@@ -174,6 +174,7 @@ fn execute_deposit(
     info: MessageInfo,
     commitment: String,
 ) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
     // Validate deposit amount from sent funds
     let amount = info
         .funds
@@ -609,26 +610,13 @@ fn verify_proof_binding(
     binding_hex == expected_hex
 }
 
-/// Poseidon hash — domain-separated hash for ZK-compatible Merkle trees.
+/// Poseidon hash — BN254 T=3 Poseidon for ZK-compatible Merkle trees.
 ///
-/// Currently uses SHA-256 as a cryptographically secure stand-in.
-/// For production, replace with a BN254 Poseidon implementation compiled
-/// to `wasm32-unknown-unknown`. Candidates:
-///   - `light-poseidon` crate (used in lumora-coprocessor) with `no_std`
-///   - `poseidon-rs` with BN254 field arithmetic
-///   - Custom T=3 Poseidon with canonical round constants from
-///     https://extgit.iaik.tugraz.at/krypto/hadeshash
-///
-/// The SHA-256 stand-in is acceptable for testnet but will produce
-/// different Merkle roots than the Solidity `PoseidonHasher.sol`,
-/// breaking cross-chain root verification on mainnet.
+/// Uses canonical circomlib MDS matrix and round constants, matching
+/// the Solidity `PoseidonHasher.sol` implementation for cross-chain
+/// root compatibility.
 fn poseidon_hash_hex(left: &str, right: &str) -> String {
-    use sha2::{Sha256, Digest};
-    let mut hasher = Sha256::new();
-    hasher.update(left.as_bytes());
-    hasher.update(right.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(result)
+    crate::poseidon::poseidon_hash_hex(left, right)
 }
 
 fn zero_hash(level: u32) -> String {
