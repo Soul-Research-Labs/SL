@@ -21,41 +21,25 @@
 //! - `e:` — Epoch data
 //! - `en:` — Epoch nullifiers
 
+pub mod hash;
+pub mod types;
+pub mod verifier;
+
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LookupMap, UnorderedMap, Vector};
+use near_sdk::collections::{LookupMap, UnorderedMap};
 use near_sdk::json_types::U128;
 use near_sdk::{env, near_bindgen, AccountId, NearToken, PanicOnDefault, Promise};
 use serde::{Deserialize, Serialize};
+
+use crate::hash::{compute_nullifier_root, poseidon_hash_hex, zero_hash, ZERO_HASH};
+use crate::types::{EpochInfo, PoolStatus};
+use crate::verifier::verify_proof_binding;
 
 // ── Constants ──────────────────────────────────────────
 
 const TREE_DEPTH: u32 = 32;
 const ROOT_HISTORY_SIZE: u32 = 100;
 const MAX_NULLIFIERS_PER_EPOCH: usize = 10_000;
-const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-
-// ── Types ──────────────────────────────────────────────
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug)]
-#[serde(crate = "near_sdk::serde")]
-pub struct EpochInfo {
-    pub start_block: u64,
-    pub end_block: Option<u64>,
-    pub nullifier_root: String,
-    pub nullifier_count: u32,
-    pub finalized: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "near_sdk::serde")]
-pub struct PoolStatus {
-    pub total_deposits: u64,
-    pub pool_balance: U128,
-    pub current_epoch: u64,
-    pub latest_root: String,
-    pub domain_chain_id: u32,
-    pub domain_app_id: u32,
-}
 
 // ── Contract ───────────────────────────────────────────
 
@@ -453,157 +437,6 @@ impl PrivacyPool {
 
         self.epoch_nullifiers.insert(&epoch_id, &epoch_nuls);
     }
-}
-
-// ── Free Functions ─────────────────────────────────────
-
-/// Proof verification with Fiat-Shamir binding.
-///
-/// Validates proof structure AND verifies a binding tag that ties the proof
-/// to its specific public inputs, preventing cross-input replay attacks.
-///
-/// ## Proof format (hex-encoded)
-///
-///   [0..64):    Binding tag — keccak256("Halo2-IPA-bind" || inputs_hash || body)
-///   [64..192):  Commitment (64 bytes)
-///   [192..256): Evaluation scalar (32 bytes)
-///   [256..N):   IPA rounds, each 128 hex chars (64 bytes)
-///
-/// ## Structural checks
-///
-/// - Proof is valid hex and >= 384 hex chars (192 bytes minimum)
-/// - Proof is not all-zero (trivially forged)
-/// - No duplicate nullifiers (double-spend prevention)
-/// - All output commitments are non-zero and distinct
-/// - Merkle root is non-zero
-/// - Binding tag matches recomputed value
-///
-/// ## Production upgrade path
-///
-/// Replace this function body with a call to `near_groth16_verify` host
-/// function (available on NEAR since protocol 63) or a WASM-compiled
-/// BN254 Groth16 verifier (e.g., `ark-groth16`). The binding tag check
-/// should be retained as an additional transcript integrity assertion.
-fn verify_proof_binding(
-    proof: &str,
-    merkle_root: &str,
-    nullifiers: &[String],
-    output_commitments: &[String],
-) -> bool {
-    // Minimum proof size: hex-encoded 192 bytes = 384 hex chars
-    if proof.len() < 384 {
-        return false;
-    }
-    // Maximum proof size
-    if proof.len() > 8192 {
-        return false;
-    }
-    // Proof must be valid hex
-    if !proof.chars().all(|c| c.is_ascii_hexdigit()) {
-        return false;
-    }
-    // Proof must be even length (complete bytes)
-    if proof.len() % 2 != 0 {
-        return false;
-    }
-    // Reject all-zero proof
-    if proof.chars().all(|c| c == '0') {
-        return false;
-    }
-    // No duplicate nullifiers
-    if nullifiers.len() >= 2 && nullifiers[0] == nullifiers[1] {
-        return false;
-    }
-    // Nullifiers must be non-zero
-    for nul in nullifiers {
-        if nul.is_empty() || nul.chars().all(|c| c == '0') {
-            return false;
-        }
-    }
-    // Non-zero root
-    if merkle_root.is_empty() || merkle_root.chars().all(|c| c == '0') {
-        return false;
-    }
-    // Non-zero and distinct output commitments
-    for cm in output_commitments {
-        if cm.is_empty() || cm.chars().all(|c| c == '0') {
-            return false;
-        }
-    }
-    if output_commitments.len() >= 2 && output_commitments[0] == output_commitments[1] {
-        return false;
-    }
-
-    // ── Binding verification ──────────────────────────────────
-    // The first 64 hex chars (32 bytes) are the binding tag.
-    // Recompute: keccak256("Halo2-IPA-bind" || inputs_hash || proof_body)
-    if proof.len() < 64 {
-        return false;
-    }
-    let binding_hex = &proof[..64];
-    let body_hex = &proof[64..];
-
-    // Hash the public inputs into a single digest
-    let mut inputs_data = Vec::new();
-    inputs_data.extend_from_slice(merkle_root.as_bytes());
-    for nul in nullifiers {
-        inputs_data.extend_from_slice(nul.as_bytes());
-    }
-    for cm in output_commitments {
-        inputs_data.extend_from_slice(cm.as_bytes());
-    }
-    let inputs_hash = env::keccak256(&inputs_data);
-
-    // Compute expected binding
-    let mut transcript = Vec::new();
-    transcript.extend_from_slice(b"Halo2-IPA-bind");
-    transcript.extend_from_slice(&inputs_hash);
-    transcript.extend_from_slice(body_hex.as_bytes());
-    let expected_binding = env::keccak256(&transcript);
-    let expected_hex = hex::encode(expected_binding);
-
-    binding_hex == expected_hex
-}
-
-fn compute_nullifier_root(nullifiers: &[String]) -> String {
-    if nullifiers.is_empty() {
-        return ZERO_HASH.to_string();
-    }
-    let mut current = nullifiers[0].clone();
-    for nul in &nullifiers[1..] {
-        current = poseidon_hash_hex(&current, nul);
-    }
-    current
-}
-
-/// Poseidon hash — domain-separated hash for ZK-compatible Merkle trees.
-///
-/// Uses NEAR's native keccak256 with a "Poseidon" domain tag to provide
-/// a deterministic, collision-resistant hash aligned across all privacy
-/// pool deployments.
-///
-/// ## Production upgrade path
-///
-/// Replace with `light-poseidon` crate compiled to WASM for exact BN254
-/// field-arithmetic alignment with `PoseidonHasher.sol` and the Halo2
-/// circuit constraints. The domain tag approach ensures collision resistance
-/// but produces different roots than on-chain Solidity Poseidon — breaking
-/// cross-chain proof verification on mainnet.
-fn poseidon_hash_hex(left: &str, right: &str) -> String {
-    let mut data = Vec::with_capacity(8 + left.len() + right.len());
-    data.extend_from_slice(b"Poseidon");
-    data.extend_from_slice(left.as_bytes());
-    data.extend_from_slice(right.as_bytes());
-    let hash = env::keccak256(&data);
-    hex::encode(hash)
-}
-
-fn zero_hash(level: u32) -> String {
-    let mut z = ZERO_HASH.to_string();
-    for _ in 0..level {
-        z = poseidon_hash_hex(&z, &z);
-    }
-    z
 }
 
 // ── Tests ──────────────────────────────────────────────
