@@ -45,6 +45,23 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     /// @notice Optional compliance oracle (address(0) = compliance disabled)
     IComplianceOracle public complianceOracle;
 
+    // ── Commit-Reveal MEV Protection ───────────────────────────────────
+
+    struct CommitRecord {
+        address depositor;
+        uint256 value;
+        uint256 blockNumber;
+        bool revealed;
+    }
+
+    /// @notice Minimum blocks between commit and reveal
+    uint256 public constant MIN_COMMIT_DELAY = 2;
+    /// @notice Maximum blocks before a commit expires
+    uint256 public constant MAX_COMMIT_DELAY = 100;
+
+    /// @notice Pending commit-reveal deposits
+    mapping(bytes32 => CommitRecord) public pendingCommits;
+
     // ── Errors ─────────────────────────────────────────────────────────
 
     error InvalidDeposit();
@@ -57,6 +74,12 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     error Unauthorized();
     error TransferFailed();
     error ComplianceCheckFailed();
+    error DuplicateCommit();
+    error NotDepositor();
+    error AlreadyRevealed();
+    error RevealTooEarly();
+    error CommitExpired();
+    error CommitNotExpired();
 
     // ── Modifiers ──────────────────────────────────────────────────────
 
@@ -90,6 +113,68 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     /// @dev Required by EmergencyPause — returns governance address.
     function _pauseGovernance() internal view override returns (address) {
         return governance;
+    }
+
+    // ── Commit-Reveal Deposit ────────────────────────────────────────
+
+    /// @inheritdoc IPrivacyPool
+    function commitDeposit(bytes32 commitHash) external payable whenNotPaused {
+        if (msg.value == 0) revert InvalidDeposit();
+        if (pendingCommits[commitHash].depositor != address(0))
+            revert DuplicateCommit();
+
+        pendingCommits[commitHash] = CommitRecord({
+            depositor: msg.sender,
+            value: msg.value,
+            blockNumber: block.number,
+            revealed: false
+        });
+
+        emit DepositCommitted(commitHash, msg.sender, msg.value);
+    }
+
+    /// @inheritdoc IPrivacyPool
+    function revealDeposit(
+        bytes32 commitment,
+        bytes32 salt
+    ) external whenNotPaused {
+        bytes32 commitHash = keccak256(abi.encodePacked(commitment, salt));
+        CommitRecord storage record = pendingCommits[commitHash];
+
+        if (record.depositor != msg.sender) revert NotDepositor();
+        if (record.revealed) revert AlreadyRevealed();
+        if (block.number < record.blockNumber + MIN_COMMIT_DELAY)
+            revert RevealTooEarly();
+        if (block.number > record.blockNumber + MAX_COMMIT_DELAY)
+            revert CommitExpired();
+
+        record.revealed = true;
+
+        // Insert into the Merkle tree and update pool
+        if (commitmentExists[commitment]) revert CommitmentAlreadyExists();
+        commitmentExists[commitment] = true;
+        (uint256 leafIndex, ) = _tree.insert(uint256(commitment));
+        poolBalance += record.value;
+
+        emit DepositRevealed(commitment, record.value);
+        emit Deposit(commitment, leafIndex, record.value, block.timestamp);
+    }
+
+    /// @inheritdoc IPrivacyPool
+    function reclaimExpiredCommit(bytes32 commitHash) external {
+        CommitRecord storage record = pendingCommits[commitHash];
+        if (record.depositor != msg.sender) revert NotDepositor();
+        if (record.revealed) revert AlreadyRevealed();
+        if (block.number <= record.blockNumber + MAX_COMMIT_DELAY)
+            revert CommitNotExpired();
+
+        uint256 refundValue = record.value;
+        delete pendingCommits[commitHash];
+
+        emit CommitReclaimed(commitHash, msg.sender, refundValue);
+
+        (bool success, ) = payable(msg.sender).call{value: refundValue}("");
+        if (!success) revert TransferFailed();
     }
 
     // ── Deposit ────────────────────────────────────────────────────────

@@ -34,6 +34,32 @@ interface IPrivacyPool {
     /// @notice Emitted when an epoch's nullifier root is finalized
     event EpochFinalized(uint256 indexed epochId, bytes32 nullifierRoot);
 
+    /// @notice Emitted when a commit-reveal deposit commit is submitted
+    event DepositCommitted(
+        bytes32 indexed commitHash,
+        address indexed depositor,
+        uint256 value
+    );
+
+    /// @notice Emitted when a commit-reveal deposit is revealed
+    event DepositRevealed(bytes32 indexed commitment, uint256 value);
+
+    /// @notice Emitted when an expired commit is reclaimed
+    event CommitReclaimed(bytes32 indexed commitHash, address indexed depositor, uint256 value);
+
+    /// @notice Submit the first phase of a commit-reveal deposit
+    /// @param commitHash keccak256(abi.encodePacked(commitment, salt))
+    function commitDeposit(bytes32 commitHash) external payable;
+
+    /// @notice Reveal a previously committed deposit
+    /// @param commitment The actual Poseidon commitment
+    /// @param salt The salt used when committing
+    function revealDeposit(bytes32 commitment, bytes32 salt) external;
+
+    /// @notice Reclaim funds from an expired commit
+    /// @param commitHash The commit hash to reclaim
+    function reclaimExpiredCommit(bytes32 commitHash) external;
+
     /// @notice Deposit assets into the privacy pool
     /// @param commitment The Poseidon commitment for the deposited note
     /// @param amount The amount of native tokens to shield
