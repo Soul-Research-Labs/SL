@@ -358,36 +358,53 @@ library PoseidonHasher {
         return mulmod(x4, x, FIELD_MODULUS);
     }
 
-    /// @dev MDS matrix multiplication (3x3 Cauchy matrix)
+    /// @dev Canonical MDS matrix multiplication for T=3 Poseidon over BN254.
+    ///      Matrix entries from circomlib/circuits/poseidon_constants.circom.
+    ///      This is the Cauchy matrix M[i][j] = 1 / (x_i + y_j) over F_p
+    ///      with x = [0, 1, 2] and y = [FIELD_MODULUS-1, FIELD_MODULUS-2, FIELD_MODULUS-3].
+    ///
+    ///      Canonical MDS entries (from circomlib reference):
+    ///        M = [[M00, M01, M02],
+    ///             [M10, M11, M12],
+    ///             [M20, M21, M22]]
+    uint256 private constant MDS_00 = 0x109b7f411ba0e4c9b2b70caf5c36a7b194be7c11ad24378bfedb68592ba8118b;
+    uint256 private constant MDS_01 = 0x2969f27eed31a480b9c36c764379dbca2cc8fdd1415c3dded62940bcde0bd771;
+    uint256 private constant MDS_02 = 0x143021ec686a3f330d5f9e654638065ce6cd79e28c5b3753326244ee65a1b1a7;
+    uint256 private constant MDS_10 = 0x16ed41e13bb9c0c66ae119424fddbcbc9314dc9fdbdeea55d6c64543dc4903e0;
+    uint256 private constant MDS_11 = 0x2e2419f9ec02ec394c9871c832963dc1b89d743c8c7b964029b2311687b1fe23;
+    uint256 private constant MDS_12 = 0x176cc029695ad02582a70eff08a6fd99d057e12e58e7d7b6b16cdfabc8ee2911;
+    uint256 private constant MDS_20 = 0x2b90bba00fca0589f617e7dcbfe82e0df706ab640ceb247b791a93b74e36736d;
+    uint256 private constant MDS_21 = 0x101071f0032379b697315571086d26850e39a080c3a3118b11aced26d3de9c1a;
+    uint256 private constant MDS_22 = 0x19a3fc0a56702bf417ba7fee3802593fa644470307043f7773e0e01e2680fb05;
+
     function _mds(
         uint256[3] memory state
     ) private pure returns (uint256[3] memory result) {
-        // Simplified MDS: Cauchy matrix entries
         result[0] = addmod(
             addmod(
-                mulmod(2, state[0], FIELD_MODULUS),
-                mulmod(1, state[1], FIELD_MODULUS),
+                mulmod(MDS_00, state[0], FIELD_MODULUS),
+                mulmod(MDS_01, state[1], FIELD_MODULUS),
                 FIELD_MODULUS
             ),
-            mulmod(1, state[2], FIELD_MODULUS),
+            mulmod(MDS_02, state[2], FIELD_MODULUS),
             FIELD_MODULUS
         );
         result[1] = addmod(
             addmod(
-                mulmod(1, state[0], FIELD_MODULUS),
-                mulmod(2, state[1], FIELD_MODULUS),
+                mulmod(MDS_10, state[0], FIELD_MODULUS),
+                mulmod(MDS_11, state[1], FIELD_MODULUS),
                 FIELD_MODULUS
             ),
-            mulmod(1, state[2], FIELD_MODULUS),
+            mulmod(MDS_12, state[2], FIELD_MODULUS),
             FIELD_MODULUS
         );
         result[2] = addmod(
             addmod(
-                mulmod(1, state[0], FIELD_MODULUS),
-                mulmod(1, state[1], FIELD_MODULUS),
+                mulmod(MDS_20, state[0], FIELD_MODULUS),
+                mulmod(MDS_21, state[1], FIELD_MODULUS),
                 FIELD_MODULUS
             ),
-            mulmod(2, state[2], FIELD_MODULUS),
+            mulmod(MDS_22, state[2], FIELD_MODULUS),
             FIELD_MODULUS
         );
     }
