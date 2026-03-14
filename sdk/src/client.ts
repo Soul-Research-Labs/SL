@@ -8,11 +8,28 @@ import {
   type Address,
   type Hash,
   type Hex,
+  type Transport,
   encodeFunctionData,
+  keccak256,
+  encodePacked,
   parseEther,
 } from "viem";
 
 import { ALL_CHAINS, type ChainConfig } from "./chains";
+
+// ── Private Mempool Configuration ──────────────────────
+
+/**
+ * Supported private mempool endpoints for MEV protection.
+ * When configured, write transactions are routed through the private RPC
+ * instead of the chain's public mempool.
+ */
+export interface PrivateMempoolConfig {
+  /** Private RPC endpoint URL */
+  rpcUrl: string;
+  /** Provider identifier for diagnostics */
+  provider: "flashbots" | "mev-blocker" | "custom";
+}
 
 // ── ABI Fragments ──────────────────────────────────────
 
@@ -82,6 +99,30 @@ const PRIVACY_POOL_ABI = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "commitDeposit",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{ name: "commitHash", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    name: "revealDeposit",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "commitment", type: "bytes32" },
+      { name: "salt", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "reclaimExpiredCommit",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "commitHash", type: "bytes32" }],
+    outputs: [],
   },
 ] as const;
 
@@ -188,9 +229,16 @@ export interface CrossChainTransferParams {
 export class SoulPrivacyClient {
   private publicClient: PublicClient;
   private walletClient?: WalletClient;
+  private privateWalletClient?: WalletClient;
   private chainConfig: ChainConfig;
+  private privateMempoolConfig?: PrivateMempoolConfig;
 
-  constructor(chainKey: string, rpcUrl?: string, walletClient?: WalletClient) {
+  constructor(
+    chainKey: string,
+    rpcUrl?: string,
+    walletClient?: WalletClient,
+    privateMempool?: PrivateMempoolConfig,
+  ) {
     const config = ALL_CHAINS[chainKey];
     if (!config) {
       throw new Error(
@@ -199,6 +247,7 @@ export class SoulPrivacyClient {
     }
     this.chainConfig = config;
     this.walletClient = walletClient;
+    this.privateMempoolConfig = privateMempool;
 
     const viemChain: Chain = {
       id: config.chainId,
@@ -217,6 +266,27 @@ export class SoulPrivacyClient {
       chain: viemChain,
       transport: http(rpcUrl || config.rpcUrl),
     });
+
+    // When a private mempool is configured, create a separate wallet client
+    // that routes write transactions through the private RPC to avoid MEV.
+    if (privateMempool && walletClient) {
+      this.privateWalletClient = createWalletClient({
+        chain: viemChain,
+        transport: http(privateMempool.rpcUrl),
+        account: walletClient.account,
+      });
+    }
+  }
+
+  /**
+   * Returns the wallet client to use for write operations. When a private
+   * mempool is configured, transactions are routed through the private RPC
+   * to prevent front-running and sandwich attacks.
+   */
+  private getWriteClient(): WalletClient {
+    if (!this.walletClient)
+      throw new Error("Wallet client required for transactions");
+    return this.privateWalletClient ?? this.walletClient;
   }
 
   // ── Pool Queries ───────────────────────────────────
@@ -263,10 +333,9 @@ export class SoulPrivacyClient {
   // ── Transactions ───────────────────────────────────
 
   async deposit(commitment: Hex, amount: bigint): Promise<Hash> {
-    if (!this.walletClient)
-      throw new Error("Wallet client required for transactions");
+    const client = this.getWriteClient();
 
-    const hash = await this.walletClient.writeContract({
+    const hash = await client.writeContract({
       address: this.chainConfig.contracts.privacyPool as Address,
       abi: PRIVACY_POOL_ABI,
       functionName: "deposit",
@@ -277,6 +346,62 @@ export class SoulPrivacyClient {
     return hash;
   }
 
+  // ── Commit-Reveal Deposit (MEV Protected) ──────────
+
+  /**
+   * Phase 1: submit a hidden commit for a future deposit.
+   * The commitment is hidden behind keccak256(commitment, salt).
+   * After MIN_COMMIT_DELAY blocks, call {@link revealDeposit}.
+   */
+  async commitDeposit(
+    commitment: Hex,
+    salt: Hex,
+    amount: bigint,
+  ): Promise<{ hash: Hash; commitHash: Hex }> {
+    const client = this.getWriteClient();
+    const commitHash = keccak256(
+      encodePacked(["bytes32", "bytes32"], [commitment, salt]),
+    );
+
+    const hash = await client.writeContract({
+      address: this.chainConfig.contracts.privacyPool as Address,
+      abi: PRIVACY_POOL_ABI,
+      functionName: "commitDeposit",
+      args: [commitHash],
+      value: amount,
+    });
+
+    return { hash, commitHash };
+  }
+
+  /**
+   * Phase 2: reveal the commitment from a previous commit. Must be called
+   * between MIN_COMMIT_DELAY (2 blocks) and MAX_COMMIT_DELAY (100 blocks)
+   * after the commit transaction.
+   */
+  async revealDeposit(commitment: Hex, salt: Hex): Promise<Hash> {
+    const client = this.getWriteClient();
+    return client.writeContract({
+      address: this.chainConfig.contracts.privacyPool as Address,
+      abi: PRIVACY_POOL_ABI,
+      functionName: "revealDeposit",
+      args: [commitment, salt],
+    });
+  }
+
+  /**
+   * Reclaim funds from an expired commit (>MAX_COMMIT_DELAY blocks old).
+   */
+  async reclaimExpiredCommit(commitHash: Hex): Promise<Hash> {
+    const client = this.getWriteClient();
+    return client.writeContract({
+      address: this.chainConfig.contracts.privacyPool as Address,
+      abi: PRIVACY_POOL_ABI,
+      functionName: "reclaimExpiredCommit",
+      args: [commitHash],
+    });
+  }
+
   async transfer(
     proof: Hex,
     merkleRoot: Hex,
@@ -285,10 +410,9 @@ export class SoulPrivacyClient {
     domainChainId?: bigint,
     domainAppId?: bigint,
   ): Promise<Hash> {
-    if (!this.walletClient)
-      throw new Error("Wallet client required for transactions");
+    const client = this.getWriteClient();
 
-    return this.walletClient.writeContract({
+    return client.writeContract({
       address: this.chainConfig.contracts.privacyPool as Address,
       abi: PRIVACY_POOL_ABI,
       functionName: "transfer",
@@ -311,10 +435,9 @@ export class SoulPrivacyClient {
     recipient: Address,
     exitValue: bigint,
   ): Promise<Hash> {
-    if (!this.walletClient)
-      throw new Error("Wallet client required for transactions");
+    const client = this.getWriteClient();
 
-    return this.walletClient.writeContract({
+    return client.writeContract({
       address: this.chainConfig.contracts.privacyPool as Address,
       abi: PRIVACY_POOL_ABI,
       functionName: "withdraw",
@@ -383,13 +506,12 @@ export class SoulPrivacyClient {
     payload: Hex,
     fee: bigint,
   ): Promise<Hash> {
-    if (!this.walletClient)
-      throw new Error("Wallet client required for transactions");
+    const client = this.getWriteClient();
     const adapter = this.chainConfig.contracts.bridgeAdapter;
     if (!adapter)
       throw new Error("No bridge adapter configured for this chain");
 
-    return this.walletClient.writeContract({
+    return client.writeContract({
       address: adapter as Address,
       abi: BRIDGE_ADAPTER_ABI,
       functionName: "sendMessage",
@@ -437,10 +559,11 @@ export class MultiChainPrivacyManager {
     chainKey: string,
     rpcUrl?: string,
     walletClient?: WalletClient,
+    privateMempool?: PrivateMempoolConfig,
   ): void {
     this.clients.set(
       chainKey,
-      new SoulPrivacyClient(chainKey, rpcUrl, walletClient),
+      new SoulPrivacyClient(chainKey, rpcUrl, walletClient, privateMempool),
     );
   }
 
@@ -485,3 +608,17 @@ export class MultiChainPrivacyManager {
     return Array.from(this.clients.keys());
   }
 }
+
+// ── Well-Known Private Mempool Presets ─────────────────
+
+/** Flashbots Protect — Ethereum mainnet only. */
+export const FLASHBOTS_PROTECT: PrivateMempoolConfig = {
+  rpcUrl: "https://rpc.flashbots.net",
+  provider: "flashbots",
+};
+
+/** MEV Blocker by CoW Protocol — Ethereum mainnet. */
+export const MEV_BLOCKER: PrivateMempoolConfig = {
+  rpcUrl: "https://rpc.mevblocker.io",
+  provider: "mev-blocker",
+};
