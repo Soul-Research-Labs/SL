@@ -307,4 +307,106 @@ contract PrivacyPoolTest is Test {
 
         assertTrue(pool.getLatestRoot() != bytes32(0));
     }
+
+    // ── Fixed Denomination Tests ───────────────────────
+
+    function test_fixed_denomination_deposit() public {
+        // Enable fixed denominations: 0.1, 1, 10 ETH
+        uint256[] memory tiers = new uint256[](3);
+        tiers[0] = 0.1 ether;
+        tiers[1] = 1 ether;
+        tiers[2] = 10 ether;
+
+        vm.prank(deployer);
+        pool.enableFixedDenominations(tiers);
+
+        assertTrue(pool.fixedDenominationsEnabled());
+
+        // Deposit at allowed tier works
+        bytes32 commitment = keccak256("denom-1");
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(commitment);
+        assertTrue(pool.commitmentExists(commitment));
+    }
+
+    function test_fixed_denomination_rejects_invalid() public {
+        uint256[] memory tiers = new uint256[](2);
+        tiers[0] = 1 ether;
+        tiers[1] = 10 ether;
+
+        vm.prank(deployer);
+        pool.enableFixedDenominations(tiers);
+
+        // Non-tier amount should revert
+        bytes32 commitment = keccak256("bad-denom");
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.InvalidDenomination.selector);
+        pool.deposit{value: 0.5 ether}(commitment);
+    }
+
+    function test_fixed_denomination_commit_reveal() public {
+        uint256[] memory tiers = new uint256[](1);
+        tiers[0] = 1 ether;
+
+        vm.prank(deployer);
+        pool.enableFixedDenominations(tiers);
+
+        // Commit at allowed tier
+        bytes32 commitment = keccak256("cr-denom");
+        bytes32 salt = keccak256("salt");
+        bytes32 commitHash = keccak256(abi.encodePacked(commitment, salt));
+
+        vm.prank(alice);
+        pool.commitDeposit{value: 1 ether}(commitHash);
+
+        // Non-tier commit should revert
+        bytes32 commitHash2 = keccak256("bad-cr");
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.InvalidDenomination.selector);
+        pool.commitDeposit{value: 0.5 ether}(commitHash2);
+    }
+
+    function test_disable_fixed_denominations() public {
+        uint256[] memory tiers = new uint256[](1);
+        tiers[0] = 1 ether;
+
+        vm.prank(deployer);
+        pool.enableFixedDenominations(tiers);
+        assertTrue(pool.fixedDenominationsEnabled());
+
+        vm.prank(deployer);
+        pool.disableFixedDenominations();
+        assertFalse(pool.fixedDenominationsEnabled());
+
+        // Any amount should work again
+        bytes32 commitment = keccak256("any-amount");
+        vm.prank(alice);
+        pool.deposit{value: 0.5 ether}(commitment);
+        assertTrue(pool.commitmentExists(commitment));
+    }
+
+    function test_get_denomination_tiers() public {
+        uint256[] memory tiers = new uint256[](3);
+        tiers[0] = 0.1 ether;
+        tiers[1] = 1 ether;
+        tiers[2] = 10 ether;
+
+        vm.prank(deployer);
+        pool.enableFixedDenominations(tiers);
+
+        uint256[] memory result = pool.getDenominationTiers();
+        assertEq(result.length, 3);
+        assertEq(result[0], 0.1 ether);
+        assertEq(result[1], 1 ether);
+        assertEq(result[2], 10 ether);
+    }
+
+    function test_only_governance_can_set_denominations() public {
+        uint256[] memory tiers = new uint256[](1);
+        tiers[0] = 1 ether;
+
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.Unauthorized.selector);
+        pool.enableFixedDenominations(tiers);
+    }
 }

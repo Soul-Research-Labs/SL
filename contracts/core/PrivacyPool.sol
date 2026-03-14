@@ -45,6 +45,17 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     /// @notice Optional compliance oracle (address(0) = compliance disabled)
     IComplianceOracle public complianceOracle;
 
+    // ── Fixed Denomination Tiers ───────────────────────────────────────
+
+    /// @notice When true, deposits must match one of the allowed denominations
+    bool public fixedDenominationsEnabled;
+
+    /// @notice Set of allowed deposit denominations (in wei)
+    mapping(uint256 => bool) public allowedDenomination;
+
+    /// @notice List of all registered denomination tiers for enumeration
+    uint256[] public denominationTiers;
+
     // ── Commit-Reveal MEV Protection ───────────────────────────────────
 
     struct CommitRecord {
@@ -80,6 +91,7 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     error RevealTooEarly();
     error CommitExpired();
     error CommitNotExpired();
+    error InvalidDenomination();
 
     // ── Modifiers ──────────────────────────────────────────────────────
 
@@ -120,6 +132,7 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     /// @inheritdoc IPrivacyPool
     function commitDeposit(bytes32 commitHash) external payable whenNotPaused {
         if (msg.value == 0) revert InvalidDeposit();
+        _checkDenomination(msg.value);
         if (pendingCommits[commitHash].depositor != address(0))
             revert DuplicateCommit();
 
@@ -186,6 +199,7 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     ) external payable whenNotPaused {
         if (amount == 0 || msg.value != amount) revert InvalidDeposit();
         if (commitmentExists[commitment]) revert CommitmentAlreadyExists();
+        _checkDenomination(amount);
 
         commitmentExists[commitment] = true;
         (uint256 leafIndex, uint256 newRoot) = _tree.insert(
@@ -412,5 +426,40 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     /// @notice Reject direct ETH transfers — all deposits must go through deposit()
     receive() external payable {
         revert InvalidDeposit();
+    }
+
+    // ── Denomination management ────────────────────────────────────────
+
+    /// @notice Enable fixed denomination deposits and set allowed tiers.
+    /// @param denominations Allowed deposit amounts in wei (e.g. 0.1, 1, 10 ETH)
+    function enableFixedDenominations(
+        uint256[] calldata denominations
+    ) external onlyGovernance {
+        for (uint256 i = 0; i < denominationTiers.length; i++) {
+            allowedDenomination[denominationTiers[i]] = false;
+        }
+        delete denominationTiers;
+
+        for (uint256 i = 0; i < denominations.length; i++) {
+            allowedDenomination[denominations[i]] = true;
+            denominationTiers.push(denominations[i]);
+        }
+        fixedDenominationsEnabled = true;
+    }
+
+    /// @notice Disable fixed denomination deposits (allow any amount).
+    function disableFixedDenominations() external onlyGovernance {
+        fixedDenominationsEnabled = false;
+    }
+
+    /// @notice Get all allowed denomination tiers.
+    function getDenominationTiers() external view returns (uint256[] memory) {
+        return denominationTiers;
+    }
+
+    function _checkDenomination(uint256 amount) private view {
+        if (fixedDenominationsEnabled && !allowedDenomination[amount]) {
+            revert InvalidDenomination();
+        }
     }
 }
