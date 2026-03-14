@@ -203,7 +203,11 @@ export class SoulPrivacyClient {
     const viemChain: Chain = {
       id: config.chainId,
       name: config.name,
-      nativeCurrency: { name: "Token", symbol: "TOK", decimals: 18 },
+      nativeCurrency: {
+        name: config.nativeToken,
+        symbol: config.nativeToken,
+        decimals: 18,
+      },
       rpcUrls: {
         default: { http: [rpcUrl || config.rpcUrl] },
       },
@@ -452,7 +456,7 @@ export class MultiChainPrivacyManager {
     if (!destConfig)
       throw new Error(`Unknown destination: ${params.destinationChain}`);
 
-    // Encode the transfer payload for bridge
+    // Encode the transfer payload for bridge — including domain IDs
     const payload = encodeFunctionData({
       abi: PRIVACY_POOL_ABI,
       functionName: "transfer",
@@ -461,6 +465,8 @@ export class MultiChainPrivacyManager {
         params.merkleRoot,
         params.nullifiers,
         params.outputCommitments,
+        BigInt(destConfig.chainId),
+        1n,
       ],
     });
 
