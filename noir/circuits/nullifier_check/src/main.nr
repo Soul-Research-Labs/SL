@@ -109,3 +109,96 @@ fn test_right_child_path() {
     let epoch_root = compute_merkle_root(nullifier, path, indices);
     main(epoch_root, nullifier, path, indices);
 }
+
+// ── Additional edge-case tests ─────────────────────────────
+
+#[test]
+fn test_zero_nullifier_allowed() {
+    // Zero nullifier is valid — no constraint forbids it
+    let nullifier = 0;
+
+    let path: [Field; 32] = [0; 32];
+    let indices: [u1; 32] = [0; 32];
+
+    let epoch_root = compute_merkle_root(nullifier, path, indices);
+    main(epoch_root, nullifier, path, indices);
+}
+
+#[test]
+fn test_all_right_child_path() {
+    // Nullifier at maximum index (all right children)
+    let nullifier = 123456;
+
+    let mut path: [Field; 32] = [0; 32];
+    let mut indices: [u1; 32] = [1; 32]; // all right children
+    // Fill siblings with distinct non-zero values
+    for i in 0..32 {
+        path[i] = (i + 1) as Field;
+    }
+
+    let epoch_root = compute_merkle_root(nullifier, path, indices);
+    main(epoch_root, nullifier, path, indices);
+}
+
+#[test(should_fail_with = "Nullifier not in epoch tree")]
+fn test_wrong_indices_fails() {
+    // Correct path values but flipped index bits
+    let nullifier = 42;
+
+    let path: [Field; 32] = [0; 32];
+    let indices: [u1; 32] = [0; 32];
+
+    let epoch_root = compute_merkle_root(nullifier, path, indices);
+
+    // Flip index bit 0 — same path but different position
+    let mut wrong_indices: [u1; 32] = [0; 32];
+    wrong_indices[0] = 1;
+
+    main(epoch_root, nullifier, path, wrong_indices);
+}
+
+#[test(should_fail_with = "Nullifier not in epoch tree")]
+fn test_wrong_epoch_root_fails() {
+    let nullifier = 42;
+
+    let path: [Field; 32] = [0; 32];
+    let indices: [u1; 32] = [0; 32];
+
+    // Use a fabricated root that doesn't match the proof
+    let fake_epoch_root = 999999;
+
+    main(fake_epoch_root, nullifier, path, indices);
+}
+
+#[test]
+fn test_mixed_index_path() {
+    // Nullifier at an alternating left/right path
+    let nullifier = 7777;
+
+    let mut path: [Field; 32] = [0; 32];
+    let mut indices: [u1; 32] = [0; 32];
+    // Alternate: right, left, right, left, ...
+    for i in 0..32 {
+        if i % 2 == 0 {
+            indices[i] = 1;
+            path[i] = (i * 3 + 5) as Field;
+        } else {
+            indices[i] = 0;
+            path[i] = (i * 7 + 2) as Field;
+        }
+    }
+
+    let epoch_root = compute_merkle_root(nullifier, path, indices);
+    main(epoch_root, nullifier, path, indices);
+}
+
+#[test]
+fn test_large_nullifier_value() {
+    let nullifier = 0xFFFFFFFFFFFFFFFFFFFFFFFF;
+
+    let path: [Field; 32] = [0; 32];
+    let indices: [u1; 32] = [0; 32];
+
+    let epoch_root = compute_merkle_root(nullifier, path, indices);
+    main(epoch_root, nullifier, path, indices);
+}

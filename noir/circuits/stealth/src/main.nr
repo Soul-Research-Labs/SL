@@ -134,3 +134,89 @@ fn test_zero_spend_key_fails() {
 
     main(0, eph_pub, 0, 0, view_pub, eph_priv);
 }
+
+// ── Additional edge-case tests ─────────────────────────────
+
+#[test(should_fail_with = "View public key must be non-zero")]
+fn test_zero_view_key_fails() {
+    let spend_pub = 111222333;
+    let eph_priv = 777888999;
+    let eph_pub = poseidon::bn254::hash_2([eph_priv, GENERATOR]);
+
+    main(0, eph_pub, 0, spend_pub, 0, eph_priv);
+}
+
+#[test(should_fail_with = "Ephemeral private key must be non-zero")]
+fn test_zero_ephemeral_priv_key_fails() {
+    let spend_pub = 111222333;
+    let view_pub = 444555666;
+
+    main(0, 0, 0, spend_pub, view_pub, 0);
+}
+
+#[test(should_fail_with = "View tag mismatch")]
+fn test_wrong_view_tag_fails() {
+    let spend_pub = 111222333;
+    let view_pub = 444555666;
+    let eph_priv = 777888999;
+
+    let eph_pub = poseidon::bn254::hash_2([eph_priv, GENERATOR]);
+    let shared_secret = poseidon::bn254::hash_2([eph_priv, view_pub]);
+    let stealth_addr = poseidon::bn254::hash_2([spend_pub, shared_secret]);
+
+    // Provide wrong view tag
+    let wrong_tag = 12345;
+
+    main(stealth_addr, eph_pub, wrong_tag, spend_pub, view_pub, eph_priv);
+}
+
+#[test(should_fail_with = "Stealth address derivation mismatch")]
+fn test_wrong_view_key_fails() {
+    let spend_pub = 111222333;
+    let view_pub = 444555666;
+    let eph_priv = 777888999;
+
+    let eph_pub = poseidon::bn254::hash_2([eph_priv, GENERATOR]);
+    let shared_secret = poseidon::bn254::hash_2([eph_priv, view_pub]);
+    let stealth_addr = poseidon::bn254::hash_2([spend_pub, shared_secret]);
+
+    let shared_bytes = shared_secret.to_be_bytes::<32>();
+    let tag = (shared_bytes[30] as Field) * 256 + (shared_bytes[31] as Field);
+
+    // Use wrong view key — shared secret will differ, so stealth address won't match
+    let wrong_view_pub = 999888777;
+    main(stealth_addr, eph_pub, tag, spend_pub, wrong_view_pub, eph_priv);
+}
+
+#[test]
+fn test_different_key_sets() {
+    // Test with a completely different set of keys
+    let spend_pub = 1;
+    let view_pub = 2;
+    let eph_priv = 3;
+
+    let eph_pub = poseidon::bn254::hash_2([eph_priv, GENERATOR]);
+    let shared_secret = poseidon::bn254::hash_2([eph_priv, view_pub]);
+    let stealth_addr = poseidon::bn254::hash_2([spend_pub, shared_secret]);
+
+    let shared_bytes = shared_secret.to_be_bytes::<32>();
+    let tag = (shared_bytes[30] as Field) * 256 + (shared_bytes[31] as Field);
+
+    main(stealth_addr, eph_pub, tag, spend_pub, view_pub, eph_priv);
+}
+
+#[test]
+fn test_large_key_values() {
+    let spend_pub = 0xFFFFFFFFFFFFFFFF;
+    let view_pub = 0xAAAAAAAAAAAAAAAA;
+    let eph_priv = 0x1234567890ABCDEF;
+
+    let eph_pub = poseidon::bn254::hash_2([eph_priv, GENERATOR]);
+    let shared_secret = poseidon::bn254::hash_2([eph_priv, view_pub]);
+    let stealth_addr = poseidon::bn254::hash_2([spend_pub, shared_secret]);
+
+    let shared_bytes = shared_secret.to_be_bytes::<32>();
+    let tag = (shared_bytes[30] as Field) * 256 + (shared_bytes[31] as Field);
+
+    main(stealth_addr, eph_pub, tag, spend_pub, view_pub, eph_priv);
+}

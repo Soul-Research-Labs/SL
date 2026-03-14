@@ -303,3 +303,211 @@ fn test_transfer_wrong_output_commitment_fails() {
         out_secret_1, out_nonce_1, out_value_1,
     );
 }
+
+// ── Additional edge-case tests ─────────────────────────────
+
+#[test(should_fail_with = "Duplicate nullifiers")]
+fn test_duplicate_nullifiers_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+
+    // Use identical notes → identical nullifiers
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 500;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment);
+    let nul = compute_nullifier_v2(in_secret, in_commitment, chain_id, app_id);
+
+    let out_secret_0 = 555;
+    let out_nonce_0 = 666;
+    let out_value_0 = 500;
+    let out_commitment_0 = poseidon::bn254::hash_3([out_secret_0, out_nonce_0, out_value_0]);
+
+    let out_secret_1 = 777;
+    let out_nonce_1 = 888;
+    let out_value_1 = 500;
+    let out_commitment_1 = poseidon::bn254::hash_3([out_secret_1, out_nonce_1, out_value_1]);
+
+    main(
+        root, nul, nul,
+        out_commitment_0, out_commitment_1,
+        chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        in_secret, in_nonce, in_value, path, indices,
+        out_secret_0, out_nonce_0, out_value_0,
+        out_secret_1, out_nonce_1, out_value_1,
+    );
+}
+
+#[test(should_fail_with = "Input 1 not in Merkle tree")]
+fn test_input1_not_in_tree_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+
+    let in_secret_0 = 111;
+    let in_nonce_0 = 222;
+    let in_value_0 = 500;
+    let in_commitment_0 = poseidon::bn254::hash_3([in_secret_0, in_nonce_0, in_value_0]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment_0);
+    let nul_0 = compute_nullifier_v2(in_secret_0, in_commitment_0, chain_id, app_id);
+
+    // Second input with different secret → different commitment → different root
+    let in_secret_1 = 333;
+    let in_nonce_1 = 444;
+    let in_value_1 = 500;
+    let in_commitment_1 = poseidon::bn254::hash_3([in_secret_1, in_nonce_1, in_value_1]);
+    let nul_1 = compute_nullifier_v2(in_secret_1, in_commitment_1, chain_id, app_id);
+
+    // Use a corrupted path for input 1 that won't match root
+    let mut bad_path: [Field; 32] = [0; 32];
+    bad_path[0] = 999999;
+
+    let out_secret_0 = 555;
+    let out_nonce_0 = 666;
+    let out_value_0 = 500;
+    let out_commitment_0 = poseidon::bn254::hash_3([out_secret_0, out_nonce_0, out_value_0]);
+
+    let out_secret_1 = 777;
+    let out_nonce_1 = 888;
+    let out_value_1 = 500;
+    let out_commitment_1 = poseidon::bn254::hash_3([out_secret_1, out_nonce_1, out_value_1]);
+
+    main(
+        root, nul_0, nul_1,
+        out_commitment_0, out_commitment_1,
+        chain_id, app_id,
+        in_secret_0, in_nonce_0, in_value_0, path, indices,
+        in_secret_1, in_nonce_1, in_value_1, bad_path, indices,
+        out_secret_0, out_nonce_0, out_value_0,
+        out_secret_1, out_nonce_1, out_value_1,
+    );
+}
+
+#[test(should_fail_with = "Invalid output commitment 1")]
+fn test_transfer_wrong_output_commitment_1_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+
+    let in_secret_0 = 111;
+    let in_nonce_0 = 222;
+    let in_value_0 = 500;
+    let in_commitment_0 = poseidon::bn254::hash_3([in_secret_0, in_nonce_0, in_value_0]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment_0);
+    let nul_0 = compute_nullifier_v2(in_secret_0, in_commitment_0, chain_id, app_id);
+
+    let in_secret_1 = 333;
+    let in_nonce_1 = 444;
+    let in_value_1 = 500;
+    let in_commitment_1 = poseidon::bn254::hash_3([in_secret_1, in_nonce_1, in_value_1]);
+    let nul_1 = compute_nullifier_v2(in_secret_1, in_commitment_1, chain_id, app_id);
+
+    let out_secret_0 = 555;
+    let out_nonce_0 = 666;
+    let out_value_0 = 500;
+    let out_commitment_0 = poseidon::bn254::hash_3([out_secret_0, out_nonce_0, out_value_0]);
+
+    // Wrong output commitment 1
+    let fake_out_commitment_1 = 99999;
+
+    main(
+        root, nul_0, nul_1,
+        out_commitment_0, fake_out_commitment_1,
+        chain_id, app_id,
+        in_secret_0, in_nonce_0, in_value_0, path, indices,
+        in_secret_1, in_nonce_1, in_value_1, path, indices,
+        out_secret_0, out_nonce_0, out_value_0,
+        555, 666, 500,
+    );
+}
+
+#[test(should_fail_with = "Invalid nullifier 0")]
+fn test_transfer_wrong_chain_id_nullifier_fails() {
+    // Nullifiers computed with chain_id=1 but circuit given chain_id=43113
+    let real_chain_id = 43113;
+    let wrong_chain_id = 1;
+    let app_id = 1;
+
+    let in_secret_0 = 111;
+    let in_nonce_0 = 222;
+    let in_value_0 = 500;
+    let in_commitment_0 = poseidon::bn254::hash_3([in_secret_0, in_nonce_0, in_value_0]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment_0);
+
+    // Compute nullifiers with wrong chain_id
+    let nul_0 = compute_nullifier_v2(in_secret_0, in_commitment_0, wrong_chain_id, app_id);
+
+    let in_secret_1 = 333;
+    let in_nonce_1 = 444;
+    let in_value_1 = 500;
+    let in_commitment_1 = poseidon::bn254::hash_3([in_secret_1, in_nonce_1, in_value_1]);
+    let nul_1 = compute_nullifier_v2(in_secret_1, in_commitment_1, wrong_chain_id, app_id);
+
+    let out_secret_0 = 555;
+    let out_nonce_0 = 666;
+    let out_value_0 = 500;
+    let out_commitment_0 = poseidon::bn254::hash_3([out_secret_0, out_nonce_0, out_value_0]);
+
+    let out_secret_1 = 777;
+    let out_nonce_1 = 888;
+    let out_value_1 = 500;
+    let out_commitment_1 = poseidon::bn254::hash_3([out_secret_1, out_nonce_1, out_value_1]);
+
+    // Pass real_chain_id to main but nullifiers were computed with wrong_chain_id
+    main(
+        root, nul_0, nul_1,
+        out_commitment_0, out_commitment_1,
+        real_chain_id, app_id,
+        in_secret_0, in_nonce_0, in_value_0, path, indices,
+        in_secret_1, in_nonce_1, in_value_1, path, indices,
+        out_secret_0, out_nonce_0, out_value_0,
+        out_secret_1, out_nonce_1, out_value_1,
+    );
+}
+
+#[test(should_fail_with = "Input 0 not in Merkle tree")]
+fn test_transfer_wrong_merkle_root_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+
+    let in_secret_0 = 111;
+    let in_nonce_0 = 222;
+    let in_value_0 = 500;
+    let in_commitment_0 = poseidon::bn254::hash_3([in_secret_0, in_nonce_0, in_value_0]);
+
+    let (_, path, indices) = build_root_for_leaf(in_commitment_0);
+    let nul_0 = compute_nullifier_v2(in_secret_0, in_commitment_0, chain_id, app_id);
+
+    let in_secret_1 = 333;
+    let in_nonce_1 = 444;
+    let in_value_1 = 500;
+    let in_commitment_1 = poseidon::bn254::hash_3([in_secret_1, in_nonce_1, in_value_1]);
+    let nul_1 = compute_nullifier_v2(in_secret_1, in_commitment_1, chain_id, app_id);
+
+    let out_secret_0 = 555;
+    let out_nonce_0 = 666;
+    let out_value_0 = 500;
+    let out_commitment_0 = poseidon::bn254::hash_3([out_secret_0, out_nonce_0, out_value_0]);
+
+    let out_secret_1 = 777;
+    let out_nonce_1 = 888;
+    let out_value_1 = 500;
+    let out_commitment_1 = poseidon::bn254::hash_3([out_secret_1, out_nonce_1, out_value_1]);
+
+    // Fabricated root that doesn't match any proof
+    let fake_root = 12345;
+
+    main(
+        fake_root, nul_0, nul_1,
+        out_commitment_0, out_commitment_1,
+        chain_id, app_id,
+        in_secret_0, in_nonce_0, in_value_0, path, indices,
+        in_secret_1, in_nonce_1, in_value_1, path, indices,
+        out_secret_0, out_nonce_0, out_value_0,
+        out_secret_1, out_nonce_1, out_value_1,
+    );
+}

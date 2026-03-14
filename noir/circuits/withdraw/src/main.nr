@@ -278,3 +278,135 @@ fn test_withdraw_zero_secret_fails() {
         0, 0, 0,
     );
 }
+
+// ── Additional edge-case tests ─────────────────────────────
+
+#[test(should_fail_with = "Input note not in Merkle tree")]
+fn test_withdraw_wrong_merkle_root_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+    let recipient = 0xdeadbeef;
+
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 1000;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (_, path, indices) = build_root_for_leaf(in_commitment);
+    let nullifier = compute_nullifier_v2(in_secret, in_commitment, chain_id, app_id);
+
+    let fake_root = 99999;
+
+    main(
+        fake_root, nullifier, recipient, in_value, 0,
+        chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        0, 0, 0,
+    );
+}
+
+#[test(should_fail_with = "Invalid change commitment")]
+fn test_withdraw_wrong_change_commitment_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+    let recipient = 0xdeadbeef;
+
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 1000;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment);
+    let nullifier = compute_nullifier_v2(in_secret, in_commitment, chain_id, app_id);
+
+    // Partial withdrawal with a fabricated change commitment
+    let change_secret = 333;
+    let change_nonce = 444;
+    let change_value = 400;
+    let fake_change_commitment = 12345;
+
+    main(
+        root, nullifier, recipient, 600, fake_change_commitment,
+        chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        change_secret, change_nonce, change_value,
+    );
+}
+
+#[test(should_fail_with = "Change commitment must be zero for full withdrawal")]
+fn test_withdraw_nonzero_change_commitment_with_zero_change_fails() {
+    let chain_id = 43113;
+    let app_id = 1;
+    let recipient = 0xdeadbeef;
+
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 1000;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment);
+    let nullifier = compute_nullifier_v2(in_secret, in_commitment, chain_id, app_id);
+
+    // Full withdrawal (change_value=0) but non-zero change_commitment
+    let bogus_change_commitment = 77777;
+
+    main(
+        root, nullifier, recipient, in_value, bogus_change_commitment,
+        chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        0, 0, 0,
+    );
+}
+
+#[test(should_fail_with = "Invalid nullifier")]
+fn test_withdraw_wrong_chain_id_fails() {
+    let real_chain_id = 43113;
+    let wrong_chain_id = 1;
+    let app_id = 1;
+    let recipient = 0xdeadbeef;
+
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 1000;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment);
+
+    // Nullifier computed with wrong chain_id
+    let nullifier = compute_nullifier_v2(in_secret, in_commitment, wrong_chain_id, app_id);
+
+    main(
+        root, nullifier, recipient, in_value, 0,
+        real_chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        0, 0, 0,
+    );
+}
+
+#[test]
+fn test_withdraw_minimum_change() {
+    // Withdraw almost everything, change = 1
+    let chain_id = 43113;
+    let app_id = 1;
+    let recipient = 0xdeadbeef;
+
+    let in_secret = 111;
+    let in_nonce = 222;
+    let in_value = 1000;
+    let in_commitment = poseidon::bn254::hash_3([in_secret, in_nonce, in_value]);
+
+    let (root, path, indices) = build_root_for_leaf(in_commitment);
+    let nullifier = compute_nullifier_v2(in_secret, in_commitment, chain_id, app_id);
+
+    let change_secret = 333;
+    let change_nonce = 444;
+    let change_value = 1;
+    let change_commitment = poseidon::bn254::hash_3([change_secret, change_nonce, change_value]);
+
+    main(
+        root, nullifier, recipient, 999, change_commitment,
+        chain_id, app_id,
+        in_secret, in_nonce, in_value, path, indices,
+        change_secret, change_nonce, change_value,
+    );
+}
