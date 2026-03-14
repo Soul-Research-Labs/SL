@@ -23,29 +23,35 @@ by creating observable deposit patterns on the public mempool.
 Implement a two-phase commit-reveal deposit mechanism in `PrivacyPool.sol`:
 
 ### Phase 1: Commit
+
 ```solidity
 function commitDeposit(bytes32 commitHash) external payable
 ```
+
 - `commitHash = keccak256(abi.encodePacked(commitment, depositorSalt))`
 - Stores `CommitRecord { depositor, blockNumber, revealed: false }`
 - Accepts the deposit value with the commit (funds locked immediately)
 - Emits `DepositCommitted(depositor, commitHash)`
 
 ### Phase 2: Reveal
+
 ```solidity
 function revealDeposit(bytes32 commitHash, bytes32 commitment) external
 ```
+
 - Must be called by the original depositor
 - Enforces timing window: `MIN_COMMIT_DELAY ≤ elapsed ≤ MAX_COMMIT_DELAY`
 - Inserts the real commitment into the Merkle tree
 - Emits `DepositRevealed(commitment, leafIndex)`
 
 ### Parameters
+
 - `MIN_COMMIT_DELAY = 2 blocks` — prevents same-block front-running
 - `MAX_COMMIT_DELAY = 100 blocks` — prevents stale commits from lingering
 - Expired commits can be reclaimed via `reclaimExpiredCommit(commitHash)`
 
 ### Deployment
+
 Implemented on: Solidity PrivacyPool, ink! privacy pool.
 The original `deposit()` function is preserved for backward compatibility.
 

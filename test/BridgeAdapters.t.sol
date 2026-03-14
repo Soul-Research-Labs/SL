@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/core/UniversalNullifierRegistry.sol";
+import {PoseidonHasher} from "../contracts/libraries/PoseidonHasher.sol";
 import "../contracts/bridges/AvaxWarpAdapter.sol";
 import "../contracts/bridges/TeleporterAdapter.sol";
 import "../contracts/bridges/XcmBridgeAdapter.sol";
@@ -35,7 +36,7 @@ contract UniversalNullifierRegistryTest is Test {
 
     function setUp() public {
         vm.startPrank(gov);
-        registry = new UniversalNullifierRegistry();
+        registry = new UniversalNullifierRegistry(gov);
         mockBridge = new MockBridgeAdapter();
         vm.stopPrank();
     }
@@ -156,8 +157,9 @@ contract UniversalNullifierRegistryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                UniversalNullifierRegistry.EpochAlreadyRecorded.selector,
+                UniversalNullifierRegistry.InvalidEpochSequence.selector,
                 AVAX_CHAIN,
+                1,
                 0
             )
         );
@@ -235,18 +237,30 @@ contract UniversalNullifierRegistryTest is Test {
         vm.prank(gov);
         registry.registerChain(AVAX_CHAIN, "Avalanche", address(mockBridge));
 
-        // Submit epoch root
-        bytes32 epochRoot = keccak256("nullifier-tree-root");
-        vm.prank(address(mockBridge));
-        registry.submitEpochRoot(AVAX_CHAIN, 0, epochRoot, 1);
-
-        // Report nullifier as spent (with proof)
+        // Build a valid 2-leaf Merkle tree
         bytes32 nullifier = keccak256("test-nullifier");
-        bytes32[] memory proof = new bytes32[](1);
-        proof[0] = keccak256("sibling");
+        bytes32 sibling = keccak256("sibling");
+        bytes32 epochRoot = bytes32(
+            PoseidonHasher.hash(uint256(nullifier), uint256(sibling))
+        );
 
         vm.prank(address(mockBridge));
-        registry.reportNullifierSpent(AVAX_CHAIN, nullifier, 0, proof);
+        registry.submitEpochRoot(AVAX_CHAIN, 0, epochRoot, 2);
+
+        // Proof: leaf on the left (pathIndex=0), sibling on the right
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = sibling;
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 0;
+
+        vm.prank(address(mockBridge));
+        registry.reportNullifierSpent(
+            AVAX_CHAIN,
+            nullifier,
+            0,
+            proof,
+            pathIndices
+        );
 
         assertTrue(registry.nullifierSpentGlobal(AVAX_CHAIN, nullifier));
     }
@@ -260,19 +274,33 @@ contract UniversalNullifierRegistryTest is Test {
         bytes32 nullifier = keccak256("test-nullifier");
 
         // Not spent anywhere yet
-        assertFalse(registry.isNullifierSpentGlobally(nullifier));
+        (bool spent, ) = registry.isNullifierSpentGlobally(nullifier);
+        assertFalse(spent);
 
-        // Submit root and report on Avalanche
-        bytes32 root = keccak256("root");
+        // Build a valid 2-leaf tree
+        bytes32 sibling = keccak256("sibling");
+        bytes32 root = bytes32(
+            PoseidonHasher.hash(uint256(nullifier), uint256(sibling))
+        );
+
         vm.startPrank(address(mockBridge));
-        registry.submitEpochRoot(AVAX_CHAIN, 0, root, 1);
+        registry.submitEpochRoot(AVAX_CHAIN, 0, root, 2);
 
         bytes32[] memory proof = new bytes32[](1);
-        proof[0] = keccak256("sibling");
-        registry.reportNullifierSpent(AVAX_CHAIN, nullifier, 0, proof);
+        proof[0] = sibling;
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 0;
+        registry.reportNullifierSpent(
+            AVAX_CHAIN,
+            nullifier,
+            0,
+            proof,
+            pathIndices
+        );
         vm.stopPrank();
 
-        assertTrue(registry.isNullifierSpentGlobally(nullifier));
+        (bool spent2, ) = registry.isNullifierSpentGlobally(nullifier);
+        assertTrue(spent2);
     }
 }
 
@@ -286,7 +314,7 @@ contract AvaxWarpAdapterTest is Test {
 
     function setUp() public {
         vm.prank(gov);
-        adapter = new AvaxWarpAdapter();
+        adapter = new AvaxWarpAdapter(bytes32(uint256(1)));
     }
 
     function test_bridgeProtocol() public view {
@@ -314,7 +342,7 @@ contract TeleporterAdapterTest is Test {
 
     function setUp() public {
         vm.prank(gov);
-        adapter = new TeleporterAdapter();
+        adapter = new TeleporterAdapter(address(0xBEEF), bytes32(uint256(1)));
     }
 
     function test_bridgeProtocol() public view {

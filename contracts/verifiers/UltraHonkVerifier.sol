@@ -187,16 +187,16 @@ contract UltraHonkVerifier is IProofVerifier {
             if (publicInputs[i] >= BN254_P) return false;
         }
 
-        // 6. Production verification via BN254 ecPairing precompile:
-        //    The proof structure follows UltraHonk layout:
-        //      - Bytes [0..256):   4 wire commitments W_1..W_4 (G1 points)
-        //      - Bytes [256..320): Grand product commitment Z (G1)
-        //      - Bytes [320..576): 4 quotient polynomial commitments T_1..T_4 (G1)
-        //      - Bytes [576..N):   Opening evaluations + KZG proof π (G1)
-        //
-        //    We extract the KZG opening proof and verify against the VK
-        //    commitments using the ecPairing precompile at address 0x08.
+        // 6. Delegate KZG pairing check to helper to avoid stack-too-deep
+        return _executePairingCheck(proof, publicInputs, vk);
+    }
 
+    /// @dev Extract KZG proof, compute Fiat-Shamir challenge, and run ecPairing
+    function _executePairingCheck(
+        bytes calldata proof,
+        uint256[] calldata publicInputs,
+        HonkVerificationKey storage vk
+    ) private view returns (bool) {
         // Extract the KZG proof point (last 64 bytes of proof)
         uint256 kzgOffset = proof.length - 64;
         uint256 piX = uint256(bytes32(proof[kzgOffset:kzgOffset + 32]));
@@ -206,109 +206,81 @@ contract UltraHonkVerifier is IProofVerifier {
         if (!_isOnCurveG1(piX, piY)) return false;
 
         // Compute the Fiat-Shamir challenge from transcript
-        // (hash of VK commitments, public inputs, and proof elements)
         bytes32 challenge = _computeChallenge(proof, publicInputs, vk);
         uint256 z = uint256(challenge) % BN254_P;
 
-        // Construct the pairing check:
-        //   e(π, [τ]_2) == e(π·z + [C]_1 - [v]_1, [1]_2)
-        // Using the ecPairing precompile (address 0x08) with two pairs.
-        //
-        // BN254 G2 generator point [1]_2 and SRS point [τ]_2 are derived
-        // from the trusted setup ceremony. Using canonical BN254 values:
-
-        // G2 generator: (x0, x1, y0, y1) in Fp2
-        uint256[2] memory g2x = [
-            uint256(
-                0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2
-            ),
-            uint256(
-                0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed
-            )
-        ];
-        uint256[2] memory g2y = [
-            uint256(
-                0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acddb9e557b7b6
-            ),
-            uint256(
-                0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa
-            )
-        ];
-
-        // Build pairing input: 2 pairs of (G1, G2) points
-        // = 2 * (32 + 32 + 64 + 64) = 384 bytes
-        bytes memory pairingInput = new bytes(384);
-
-        // Pair 1: (-π, [τ]_2)  — negate the proof point (flip y to p-y)
-        uint256 negPiY = BN254_P - piY;
-        assembly {
-            let ptr := add(pairingInput, 0x20)
-            mstore(ptr, piX)
-            mstore(add(ptr, 0x20), negPiY)
-            // [τ]_2 — SRS tau in G2 (using BN254 ceremony value)
-            mstore(add(ptr, 0x40), mload(g2x))
-            mstore(add(ptr, 0x60), mload(add(g2x, 0x20)))
-            mstore(add(ptr, 0x80), mload(g2y))
-            mstore(add(ptr, 0xa0), mload(add(g2y, 0x20)))
-        }
-
-        // Pair 2: (π·z + commitment, [1]_2)
-        // Compute commitment point from first wire commitment adjusted by challenge
+        // Commitment point from first wire commitment
         uint256 cX = uint256(bytes32(proof[0:32]));
         uint256 cY = uint256(bytes32(proof[32:64]));
 
-        // Scale π by z using ecMul precompile (0x07)
-        uint256 scaledX;
-        uint256 scaledY;
-        assembly {
+        return _doPairingCheck(piX, piY, z, cX, cY);
+    }
+
+    /// @dev Execute BN254 pairing check: e(-π, [τ]_2) * e(π·z + C, [1]_2) == 1
+    function _doPairingCheck(
+        uint256 piX,
+        uint256 piY,
+        uint256 z,
+        uint256 cX,
+        uint256 cY
+    ) private view returns (bool pairingValid) {
+        // G2 generator constants (BN254 canonical)
+        uint256 g2x0 = 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2;
+        uint256 g2x1 = 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed;
+        uint256 g2y0 = 0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acddb9e557b7b6;
+        uint256 g2y1 = 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa;
+
+        assembly ("memory-safe") {
             let ptr := mload(0x40)
+
+            // --- ecMul: scaledPt = π * z ---
             mstore(ptr, piX)
             mstore(add(ptr, 0x20), piY)
             mstore(add(ptr, 0x40), z)
-            let success := staticcall(gas(), 0x07, ptr, 0x60, ptr, 0x40)
-            if iszero(success) {
+            if iszero(staticcall(gas(), 0x07, ptr, 0x60, ptr, 0x40)) {
                 revert(0, 0)
             }
-            scaledX := mload(ptr)
-            scaledY := mload(add(ptr, 0x20))
-        }
+            let sX := mload(ptr)
+            let sY := mload(add(ptr, 0x20))
 
-        // Add scaled point to commitment using ecAdd precompile (0x06)
-        uint256 sumX;
-        uint256 sumY;
-        assembly {
-            let ptr := mload(0x40)
-            mstore(ptr, scaledX)
-            mstore(add(ptr, 0x20), scaledY)
+            // --- ecAdd: sumPt = scaledPt + C ---
+            mstore(ptr, sX)
+            mstore(add(ptr, 0x20), sY)
             mstore(add(ptr, 0x40), cX)
             mstore(add(ptr, 0x60), cY)
-            let success := staticcall(gas(), 0x06, ptr, 0x80, ptr, 0x40)
-            if iszero(success) {
+            if iszero(staticcall(gas(), 0x06, ptr, 0x80, ptr, 0x40)) {
                 revert(0, 0)
             }
-            sumX := mload(ptr)
-            sumY := mload(add(ptr, 0x20))
-        }
+            let sumX := mload(ptr)
+            let sumY := mload(add(ptr, 0x20))
 
-        assembly {
-            let ptr := add(pairingInput, 0x20)
+            // --- Build pairing input (384 bytes) ---
+            // Pair 1: (-π, G2)
+            let negPiY := sub(
+                0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47,
+                piY
+            )
+            mstore(ptr, piX)
+            mstore(add(ptr, 0x20), negPiY)
+            mstore(add(ptr, 0x40), g2x0)
+            mstore(add(ptr, 0x60), g2x1)
+            mstore(add(ptr, 0x80), g2y0)
+            mstore(add(ptr, 0xa0), g2y1)
+
+            // Pair 2: (sumPt, G2)
             mstore(add(ptr, 0xc0), sumX)
             mstore(add(ptr, 0xe0), sumY)
-            mstore(add(ptr, 0x100), mload(g2x))
-            mstore(add(ptr, 0x120), mload(add(g2x, 0x20)))
-            mstore(add(ptr, 0x140), mload(g2y))
-            mstore(add(ptr, 0x160), mload(add(g2y, 0x20)))
-        }
+            mstore(add(ptr, 0x100), g2x0)
+            mstore(add(ptr, 0x120), g2x1)
+            mstore(add(ptr, 0x140), g2y0)
+            mstore(add(ptr, 0x160), g2y1)
 
-        // Call ecPairing precompile (0x08)
-        bool pairingValid;
-        assembly {
-            let ptr := add(pairingInput, 0x20)
-            let success := staticcall(gas(), 0x08, ptr, 0x180, ptr, 0x20)
-            pairingValid := and(success, mload(ptr))
+            // --- ecPairing ---
+            if iszero(staticcall(gas(), 0x08, ptr, 0x180, ptr, 0x20)) {
+                revert(0, 0)
+            }
+            pairingValid := mload(ptr)
         }
-
-        return pairingValid;
     }
 
     /// @dev Compute Fiat-Shamir challenge from transcript

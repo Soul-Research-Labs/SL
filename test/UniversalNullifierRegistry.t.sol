@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/core/UniversalNullifierRegistry.sol";
+import "../contracts/libraries/PoseidonHasher.sol";
 
 contract UniversalNullifierRegistryTest is Test {
     UniversalNullifierRegistry public registry;
@@ -101,18 +102,33 @@ contract UniversalNullifierRegistryTest is Test {
 
     function test_submitEpochRoot() public {
         _setupAvaxChain();
-        bytes32 root = keccak256("epoch-root-1");
+        bytes32 root = keccak256("epoch-root-0");
 
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, root, 42);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 42);
 
-        assertEq(registry.epochRoots(AVAX_CHAIN_ID, 1), root);
+        assertEq(registry.epochRoots(AVAX_CHAIN_ID, 0), root);
 
         (uint256 epochId, bytes32 latestRoot) = registry.getChainLatestEpoch(
             AVAX_CHAIN_ID
         );
-        assertEq(epochId, 1);
+        assertEq(epochId, 0);
         assertEq(latestRoot, root);
+    }
+
+    function test_submitEpochRoot_first_must_be_zero() public {
+        _setupAvaxChain();
+
+        vm.prank(bridgeAvax);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniversalNullifierRegistry.InvalidEpochSequence.selector,
+                AVAX_CHAIN_ID,
+                0,
+                5
+            )
+        );
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 5, keccak256("r"), 10);
     }
 
     function test_submitEpochRoot_reverts_unauthorized() public {
@@ -125,19 +141,20 @@ contract UniversalNullifierRegistryTest is Test {
 
     function test_submitEpochRoot_reverts_duplicate() public {
         _setupAvaxChain();
-        bytes32 root = keccak256("epoch-root-1");
+        bytes32 root = keccak256("epoch-root-0");
 
         vm.startPrank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, root, 42);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 42);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                UniversalNullifierRegistry.EpochAlreadyRecorded.selector,
+                UniversalNullifierRegistry.InvalidEpochSequence.selector,
                 AVAX_CHAIN_ID,
-                1
+                1,
+                0
             )
         );
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, root, 42);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 42);
         vm.stopPrank();
     }
 
@@ -145,6 +162,7 @@ contract UniversalNullifierRegistryTest is Test {
         _setupAvaxChain();
 
         vm.startPrank(bridgeAvax);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, keccak256("r0"), 5);
         registry.submitEpochRoot(AVAX_CHAIN_ID, 1, keccak256("r1"), 10);
         registry.submitEpochRoot(AVAX_CHAIN_ID, 2, keccak256("r2"), 20);
         registry.submitEpochRoot(AVAX_CHAIN_ID, 3, keccak256("r3"), 30);
@@ -152,6 +170,25 @@ contract UniversalNullifierRegistryTest is Test {
 
         (uint256 epochId, ) = registry.getChainLatestEpoch(AVAX_CHAIN_ID);
         assertEq(epochId, 3);
+    }
+
+    function test_submitEpochRoot_reverts_gap() public {
+        _setupAvaxChain();
+
+        vm.startPrank(bridgeAvax);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, keccak256("r0"), 5);
+
+        // Skipping epoch 1 should revert
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UniversalNullifierRegistry.InvalidEpochSequence.selector,
+                AVAX_CHAIN_ID,
+                1,
+                3
+            )
+        );
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 3, keccak256("r3"), 10);
+        vm.stopPrank();
     }
 
     function test_submitEpochRoot_reverts_inactive_chain() public {
@@ -176,9 +213,9 @@ contract UniversalNullifierRegistryTest is Test {
         _setupAvaxChain();
 
         vm.prank(governance);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, keccak256("gov-root"), 5);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, keccak256("gov-root"), 5);
 
-        assertEq(registry.epochRoots(AVAX_CHAIN_ID, 1), keccak256("gov-root"));
+        assertEq(registry.epochRoots(AVAX_CHAIN_ID, 0), keccak256("gov-root"));
     }
 
     // ── Global Snapshot ───────────────────────────────
@@ -200,7 +237,7 @@ contract UniversalNullifierRegistryTest is Test {
         _setupAvaxChain();
 
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, keccak256("r1"), 10);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, keccak256("r0"), 10);
 
         registry.createGlobalSnapshot();
 
@@ -212,10 +249,10 @@ contract UniversalNullifierRegistryTest is Test {
         _setupTwoChains();
 
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, keccak256("avax-r1"), 10);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, keccak256("avax-r0"), 10);
 
         vm.prank(bridgeMoon);
-        registry.submitEpochRoot(MOON_CHAIN_ID, 1, keccak256("moon-r1"), 20);
+        registry.submitEpochRoot(MOON_CHAIN_ID, 0, keccak256("moon-r0"), 20);
 
         registry.createGlobalSnapshot();
 
@@ -233,24 +270,29 @@ contract UniversalNullifierRegistryTest is Test {
         assertFalse(spent);
     }
 
-    function test_reportNullifierSpent_with_single_element_tree() public {
+    function test_reportNullifierSpent_with_single_sibling() public {
         _setupAvaxChain();
 
-        // Create a single-element "Merkle tree": root = leaf
+        // Build a 2-leaf tree: root = Poseidon(leaf, sibling)
         bytes32 nullifier = keccak256("spent-nullifier");
+        bytes32 sibling = keccak256("sibling-leaf");
+        bytes32 root = bytes32(
+            PoseidonHasher.hash(uint256(nullifier), uint256(sibling))
+        );
 
-        // Submit epoch root that IS the nullifier (trivial case: 1 leaf)
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, nullifier, 1);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 2);
 
-        // Report with empty proof (leaf == root)
-        bytes32[] memory proof = new bytes32[](0);
-        uint256[] memory pathIndices = new uint256[](0);
+        // Leaf is on the left (pathIndex=0), sibling on the right
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = sibling;
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 0;
 
         registry.reportNullifierSpent(
             AVAX_CHAIN_ID,
             nullifier,
-            1,
+            0,
             proof,
             pathIndices
         );
@@ -262,20 +304,77 @@ contract UniversalNullifierRegistryTest is Test {
         assertEq(chainId, AVAX_CHAIN_ID);
     }
 
+    function test_reportNullifierSpent_empty_proof_reverts() public {
+        _setupAvaxChain();
+        bytes32 nullifier = keccak256("nul");
+
+        vm.prank(bridgeAvax);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, nullifier, 1);
+
+        // Empty proof should now be rejected
+        bytes32[] memory proof = new bytes32[](0);
+        uint256[] memory pathIndices = new uint256[](0);
+
+        vm.expectRevert(
+            UniversalNullifierRegistry.InvalidInclusionProof.selector
+        );
+        registry.reportNullifierSpent(
+            AVAX_CHAIN_ID,
+            nullifier,
+            0,
+            proof,
+            pathIndices
+        );
+    }
+
+    function test_reportNullifierSpent_bad_pathIndex_reverts() public {
+        _setupAvaxChain();
+        bytes32 nullifier = keccak256("nul-bad-path");
+        bytes32 sibling = keccak256("sib");
+        bytes32 root = bytes32(
+            PoseidonHasher.hash(uint256(nullifier), uint256(sibling))
+        );
+
+        vm.prank(bridgeAvax);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 2);
+
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = sibling;
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 2; // invalid — must be 0 or 1
+
+        vm.expectRevert(
+            UniversalNullifierRegistry.InvalidInclusionProof.selector
+        );
+        registry.reportNullifierSpent(
+            AVAX_CHAIN_ID,
+            nullifier,
+            0,
+            proof,
+            pathIndices
+        );
+    }
+
     function test_reportNullifierSpent_reverts_duplicate() public {
         _setupAvaxChain();
         bytes32 nullifier = keccak256("nul-dup");
+        bytes32 sibling = keccak256("sib-dup");
+        bytes32 root = bytes32(
+            PoseidonHasher.hash(uint256(nullifier), uint256(sibling))
+        );
 
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, nullifier, 1);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, root, 2);
 
-        bytes32[] memory proof = new bytes32[](0);
-        uint256[] memory pathIndices = new uint256[](0);
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = sibling;
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 0;
 
         registry.reportNullifierSpent(
             AVAX_CHAIN_ID,
             nullifier,
-            1,
+            0,
             proof,
             pathIndices
         );
@@ -290,7 +389,7 @@ contract UniversalNullifierRegistryTest is Test {
         registry.reportNullifierSpent(
             AVAX_CHAIN_ID,
             nullifier,
-            1,
+            0,
             proof,
             pathIndices
         );
@@ -302,10 +401,13 @@ contract UniversalNullifierRegistryTest is Test {
         bytes32 fakeRoot = keccak256("different-root");
 
         vm.prank(bridgeAvax);
-        registry.submitEpochRoot(AVAX_CHAIN_ID, 1, fakeRoot, 1);
+        registry.submitEpochRoot(AVAX_CHAIN_ID, 0, fakeRoot, 1);
 
-        bytes32[] memory proof = new bytes32[](0);
-        uint256[] memory pathIndices = new uint256[](0);
+        // Non-empty proof that doesn't match
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = keccak256("wrong-sibling");
+        uint256[] memory pathIndices = new uint256[](1);
+        pathIndices[0] = 0;
 
         vm.expectRevert(
             UniversalNullifierRegistry.InvalidInclusionProof.selector
@@ -313,7 +415,7 @@ contract UniversalNullifierRegistryTest is Test {
         registry.reportNullifierSpent(
             AVAX_CHAIN_ID,
             nullifier,
-            1,
+            0,
             proof,
             pathIndices
         );

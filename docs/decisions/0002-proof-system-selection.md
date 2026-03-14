@@ -9,13 +9,13 @@
 The privacy pool requires zero-knowledge proofs for deposits, transfers, and
 withdrawals. Multiple proof systems are available with different trade-offs:
 
-| System | Trusted Setup | Proof Size | Verification Gas | Curves |
-|--------|--------------|------------|-----------------|--------|
-| Groth16 | Required (per-circuit) | ~200 B | ~200k gas | BN254 |
-| Halo2 (KZG) | Universal SRS | ~1–3 KB | ~300k gas | BN254 |
-| Halo2 (IPA) | None (transparent) | ~3–10 KB | ~500k gas | Pasta/BN254 |
-| PLONK (Aztec) | Universal SRS | ~500 B | ~250k gas | BN254 |
-| Nova/folding | None | Varies | Varies | Pasta |
+| System        | Trusted Setup          | Proof Size | Verification Gas | Curves      |
+| ------------- | ---------------------- | ---------- | ---------------- | ----------- |
+| Groth16       | Required (per-circuit) | ~200 B     | ~200k gas        | BN254       |
+| Halo2 (KZG)   | Universal SRS          | ~1–3 KB    | ~300k gas        | BN254       |
+| Halo2 (IPA)   | None (transparent)     | ~3–10 KB   | ~500k gas        | Pasta/BN254 |
+| PLONK (Aztec) | Universal SRS          | ~500 B     | ~250k gas        | BN254       |
+| Nova/folding  | None                   | Varies     | Varies           | Pasta       |
 
 Key requirements:
 

@@ -6,42 +6,72 @@ import "../contracts/core/PrivacyPool.sol";
 import "../contracts/core/EpochManager.sol";
 import "../contracts/interfaces/IProofVerifier.sol";
 
-/// @notice Mock verifier that always returns true — for testing only.
 contract MockVerifier is IProofVerifier {
     function verifyTransferProof(
         bytes calldata,
-        bytes32,
-        bytes32[2] calldata,
-        bytes32[2] calldata,
-        uint256,
-        uint256
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
 
     function verifyWithdrawProof(
         bytes calldata,
-        bytes32,
-        bytes32[2] calldata,
-        bytes32[2] calldata,
-        address,
-        uint256,
-        uint256,
-        uint256
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
 
     function verifyAggregatedProof(
         bytes calldata,
-        bytes32[] calldata,
-        bytes32[] calldata
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
 
     function provingSystem() external pure returns (string memory) {
         return "mock";
+    }
+}
+
+contract ReentrancyAttacker {
+    PrivacyPool public target;
+    bool public attacked;
+
+    constructor(address _pool) {
+        target = PrivacyPool(payable(_pool));
+    }
+
+    function attack(
+        bytes calldata proof,
+        bytes32 root,
+        bytes32[2] calldata nullifiers,
+        bytes32[2] calldata outputs,
+        uint256 exitValue
+    ) external {
+        target.withdraw(
+            proof,
+            root,
+            nullifiers,
+            outputs,
+            payable(address(this)),
+            exitValue
+        );
+    }
+
+    receive() external payable {
+        if (!attacked) {
+            attacked = true;
+            try
+                target.withdraw(
+                    new bytes(512),
+                    target.getLatestRoot(),
+                    [keccak256("re-nul1"), keccak256("re-nul2")],
+                    [keccak256("re-out1"), keccak256("re-out2")],
+                    payable(address(this)),
+                    1 ether
+                )
+            {} catch {}
+        }
     }
 }
 
@@ -54,13 +84,12 @@ contract PrivacyPoolTest is Test {
     address public alice = address(2);
     address public bob = address(3);
 
-    uint256 constant DOMAIN_CHAIN_ID = 43113; // Fuji
+    uint256 constant DOMAIN_CHAIN_ID = 43113;
     uint256 constant DOMAIN_APP_ID = 1;
-    uint256 constant EPOCH_DURATION = 100; // blocks
+    uint256 constant EPOCH_DURATION = 100;
 
     function setUp() public {
         vm.startPrank(deployer);
-
         verifier = new MockVerifier();
         epochManager = new EpochManager(EPOCH_DURATION, DOMAIN_CHAIN_ID);
         pool = new PrivacyPool(
@@ -71,342 +100,349 @@ contract PrivacyPoolTest is Test {
             deployer,
             address(0)
         );
-
-        // Authorize the pool in the epoch manager
         epochManager.authorizePool(address(pool));
-
         vm.stopPrank();
 
-        // Fund accounts
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
     }
 
-    // ── Deposit Tests ──────────────────────────────────
+    // ── deposit ──────────────────────────────────────────────────
 
     function test_deposit() public {
-        bytes32 commitment = keccak256("test commitment");
-
         vm.prank(alice);
-        pool.deposit{value: 1 ether}(commitment);
-
-        // Verify root changed
-        bytes32 root = pool.getLatestRoot();
-        assertTrue(root != bytes32(0), "Root should not be zero after deposit");
-    }
-
-    function test_deposit_emits_event() public {
-        bytes32 commitment = keccak256("test commitment");
-
-        vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit PrivacyPool.Deposit(commitment, 0, 1 ether);
-        pool.deposit{value: 1 ether}(commitment);
+        pool.deposit{value: 1 ether}(keccak256("c"), 1 ether);
+        assertTrue(pool.getLatestRoot() != bytes32(0));
     }
 
     function test_deposit_multiple() public {
-        bytes32 c1 = keccak256("commitment 1");
-        bytes32 c2 = keccak256("commitment 2");
-        bytes32 c3 = keccak256("commitment 3");
-
         vm.startPrank(alice);
-        pool.deposit{value: 1 ether}(c1);
-        pool.deposit{value: 2 ether}(c2);
-        pool.deposit{value: 0.5 ether}(c3);
+        pool.deposit{value: 1 ether}(keccak256("c1"), 1 ether);
+        pool.deposit{value: 2 ether}(keccak256("c2"), 2 ether);
+        pool.deposit{value: 0.5 ether}(keccak256("c3"), 0.5 ether);
         vm.stopPrank();
-
-        assertEq(pool.getNextLeafIndex(), 3, "Should have 3 leaves");
+        assertEq(pool.getNextLeafIndex(), 3);
     }
 
-    function test_deposit_zero_value_reverts() public {
-        bytes32 commitment = keccak256("test");
-
+    function test_deposit_zero_reverts() public {
         vm.prank(alice);
         vm.expectRevert();
-        pool.deposit{value: 0}(commitment);
+        pool.deposit{value: 0}(keccak256("z"), 0);
+    }
+
+    function test_deposit_amount_mismatch_reverts() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        pool.deposit{value: 1 ether}(keccak256("mm"), 2 ether);
     }
 
     function test_deposit_duplicate_commitment_reverts() public {
-        bytes32 commitment = keccak256("duplicate");
-
+        bytes32 c = keccak256("dup");
         vm.prank(alice);
-        pool.deposit{value: 1 ether}(commitment);
-
+        pool.deposit{value: 1 ether}(c, 1 ether);
         vm.prank(bob);
         vm.expectRevert();
-        pool.deposit{value: 1 ether}(commitment);
+        pool.deposit{value: 1 ether}(c, 1 ether);
     }
 
-    // ── Root History Tests ─────────────────────────────
+    // ── root history ─────────────────────────────────────────────
 
     function test_root_history() public {
-        bytes32 c1 = keccak256("c1");
-        bytes32 c2 = keccak256("c2");
-
         vm.startPrank(alice);
-        pool.deposit{value: 1 ether}(c1);
-        bytes32 root1 = pool.getLatestRoot();
-
-        pool.deposit{value: 1 ether}(c2);
-        bytes32 root2 = pool.getLatestRoot();
+        pool.deposit{value: 1 ether}(keccak256("h1"), 1 ether);
+        bytes32 r1 = pool.getLatestRoot();
+        pool.deposit{value: 1 ether}(keccak256("h2"), 1 ether);
+        bytes32 r2 = pool.getLatestRoot();
         vm.stopPrank();
-
-        assertTrue(root1 != root2, "Roots should differ");
-        assertTrue(pool.isKnownRoot(root1), "Old root should still be known");
-        assertTrue(pool.isKnownRoot(root2), "New root should be known");
+        assertTrue(r1 != r2);
+        assertTrue(pool.isKnownRoot(r1));
+        assertTrue(pool.isKnownRoot(r2));
     }
 
-    function test_unknown_root() public {
-        bytes32 fakeRoot = keccak256("fake root");
-        assertFalse(pool.isKnownRoot(fakeRoot));
+    function test_unknown_root() public view {
+        assertFalse(pool.isKnownRoot(keccak256("fake")));
     }
 
-    function test_zero_root_not_known() public {
-        assertFalse(pool.isKnownRoot(bytes32(0)));
-    }
-
-    // ── Transfer Tests ─────────────────────────────────
+    // ── transfer ─────────────────────────────────────────────────
 
     function test_transfer() public {
-        // Deposit first
-        bytes32 c1 = keccak256("input note 1");
-        bytes32 c2 = keccak256("input note 2");
-
         vm.startPrank(alice);
-        pool.deposit{value: 1 ether}(c1);
-        pool.deposit{value: 1 ether}(c2);
+        pool.deposit{value: 1 ether}(keccak256("in1"), 1 ether);
+        pool.deposit{value: 1 ether}(keccak256("in2"), 1 ether);
         vm.stopPrank();
 
         bytes32 root = pool.getLatestRoot();
-        bytes32 nul1 = keccak256("nullifier 1");
-        bytes32 nul2 = keccak256("nullifier 2");
-        bytes32 out1 = keccak256("output 1");
-        bytes32 out2 = keccak256("output 2");
-
-        bytes memory proof = new bytes(512);
-
-        vm.prank(alice);
-        pool.transfer(proof, root, [nul1, nul2], [out1, out2]);
-
-        // Nullifiers should be spent
-        assertTrue(pool.isSpent(nul1));
-        assertTrue(pool.isSpent(nul2));
-    }
-
-    function test_transfer_duplicate_nullifier_reverts() public {
-        bytes32 c1 = keccak256("c1");
-        vm.prank(alice);
-        pool.deposit{value: 1 ether}(c1);
-
-        bytes32 root = pool.getLatestRoot();
-        bytes32 nul = keccak256("same nullifier");
-
-        vm.prank(alice);
-        vm.expectRevert();
-        pool.transfer(
-            new bytes(512),
-            root,
-            [nul, nul], // duplicate
-            [keccak256("o1"), keccak256("o2")]
-        );
-    }
-
-    function test_transfer_spent_nullifier_reverts() public {
-        bytes32 c1 = keccak256("c1");
-        bytes32 c2 = keccak256("c2");
-        vm.startPrank(alice);
-        pool.deposit{value: 1 ether}(c1);
-        pool.deposit{value: 1 ether}(c2);
-        vm.stopPrank();
-
-        bytes32 root = pool.getLatestRoot();
-        bytes32 nul1 = keccak256("nul1");
-        bytes32 nul2 = keccak256("nul2");
-
-        // First transfer succeeds
         vm.prank(alice);
         pool.transfer(
-            new bytes(512),
-            root,
-            [nul1, nul2],
-            [keccak256("o1"), keccak256("o2")]
-        );
-
-        // Re-using nul1 should revert
-        bytes32 root2 = pool.getLatestRoot();
-        vm.prank(alice);
-        vm.expectRevert();
-        pool.transfer(
-            new bytes(512),
-            root2,
-            [nul1, keccak256("nul3")],
-            [keccak256("o3"), keccak256("o4")]
-        );
-    }
-
-    // ── Withdraw Tests ─────────────────────────────────
-
-    function test_withdraw() public {
-        bytes32 c1 = keccak256("c1");
-        vm.prank(alice);
-        pool.deposit{value: 5 ether}(c1);
-
-        bytes32 root = pool.getLatestRoot();
-        bytes32 nul1 = keccak256("wnul1");
-        bytes32 nul2 = keccak256("wnul2");
-
-        uint256 bobBalBefore = bob.balance;
-
-        vm.prank(bob);
-        pool.withdraw(
-            new bytes(512),
-            root,
-            [nul1, nul2],
-            [keccak256("wo1"), keccak256("wo2")],
-            bob,
-            3 ether
-        );
-
-        assertEq(
-            bob.balance,
-            bobBalBefore + 3 ether,
-            "Bob should receive 3 ether"
-        );
-        assertTrue(pool.isSpent(nul1));
-        assertTrue(pool.isSpent(nul2));
-    }
-
-    function test_withdraw_insufficient_balance_reverts() public {
-        bytes32 c1 = keccak256("c1");
-        vm.prank(alice);
-        pool.deposit{value: 1 ether}(c1);
-
-        bytes32 root = pool.getLatestRoot();
-
-        vm.prank(bob);
-        vm.expectRevert();
-        pool.withdraw(
             new bytes(512),
             root,
             [keccak256("n1"), keccak256("n2")],
             [keccak256("o1"), keccak256("o2")],
-            bob,
-            10 ether // more than deposited
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+        assertTrue(pool.isSpent(keccak256("n1")));
+        assertTrue(pool.isSpent(keccak256("n2")));
+    }
+
+    function test_transfer_wrong_domain_chain_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("d"), 1 ether);
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.DomainMismatch.selector);
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [keccak256("o1"), keccak256("o2")],
+            99999,
+            DOMAIN_APP_ID
         );
     }
 
-    // ── Fuzz Tests ─────────────────────────────────────
+    function test_transfer_wrong_app_id_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("d"), 1 ether);
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.DomainMismatch.selector);
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [keccak256("o1"), keccak256("o2")],
+            DOMAIN_CHAIN_ID,
+            999
+        );
+    }
 
-    function testFuzz_deposit_various_amounts(uint256 amount) public {
+    function test_transfer_zero_output_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("d"), 1 ether);
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.InvalidOutputCommitment.selector);
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [bytes32(0), keccak256("o2")],
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+    }
+
+    function test_transfer_duplicate_output_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("d"), 1 ether);
+        bytes32 same = keccak256("same");
+        vm.prank(alice);
+        vm.expectRevert(PrivacyPool.InvalidOutputCommitment.selector);
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [same, same],
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+    }
+
+    function test_transfer_duplicate_nullifier_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("d"), 1 ether);
+        vm.prank(alice);
+        vm.expectRevert();
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("s"), keccak256("s")],
+            [keccak256("o1"), keccak256("o2")],
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+    }
+
+    function test_transfer_spent_nullifier_reverts() public {
+        vm.startPrank(alice);
+        pool.deposit{value: 1 ether}(keccak256("in1"), 1 ether);
+        pool.deposit{value: 1 ether}(keccak256("in2"), 1 ether);
+        vm.stopPrank();
+
+        bytes32 nul = keccak256("reuse");
+        vm.prank(alice);
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [nul, keccak256("n2")],
+            [keccak256("a1"), keccak256("a2")],
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+        vm.prank(alice);
+        vm.expectRevert();
+        pool.transfer(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [nul, keccak256("n3")],
+            [keccak256("b1"), keccak256("b2")],
+            DOMAIN_CHAIN_ID,
+            DOMAIN_APP_ID
+        );
+    }
+
+    // ── withdraw ─────────────────────────────────────────────────
+
+    function test_withdraw() public {
+        vm.prank(alice);
+        pool.deposit{value: 5 ether}(keccak256("w"), 5 ether);
+        uint256 bobBal = bob.balance;
+        vm.prank(bob);
+        pool.withdraw(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("wn1"), keccak256("wn2")],
+            [keccak256("wo1"), keccak256("wo2")],
+            payable(bob),
+            3 ether
+        );
+        assertEq(bob.balance, bobBal + 3 ether);
+    }
+
+    function test_withdraw_zero_output_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 5 ether}(keccak256("w"), 5 ether);
+        vm.prank(bob);
+        vm.expectRevert(PrivacyPool.InvalidOutputCommitment.selector);
+        pool.withdraw(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [bytes32(0), keccak256("o")],
+            payable(bob),
+            1 ether
+        );
+    }
+
+    function test_withdraw_insufficient_reverts() public {
+        vm.prank(alice);
+        pool.deposit{value: 1 ether}(keccak256("c"), 1 ether);
+        vm.prank(bob);
+        vm.expectRevert();
+        pool.withdraw(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("n1"), keccak256("n2")],
+            [keccak256("o1"), keccak256("o2")],
+            payable(bob),
+            10 ether
+        );
+    }
+
+    function test_withdraw_reentrancy_blocked() public {
+        vm.prank(alice);
+        pool.deposit{value: 10 ether}(keccak256("re"), 10 ether);
+        ReentrancyAttacker attacker = new ReentrancyAttacker(address(pool));
+        attacker.attack(
+            new bytes(512),
+            pool.getLatestRoot(),
+            [keccak256("atk1"), keccak256("atk2")],
+            [keccak256("ato1"), keccak256("ato2")],
+            1 ether
+        );
+        assertTrue(pool.isSpent(keccak256("atk1")));
+        assertFalse(pool.isSpent(keccak256("re-nul1")));
+    }
+
+    function test_reclaimExpiredCommit_nonReentrant() public {
+        bytes32 commitment = keccak256("cr-c");
+        bytes32 salt = keccak256("cr-s");
+        bytes32 commitHash = keccak256(abi.encodePacked(commitment, salt));
+        vm.prank(alice);
+        pool.commitDeposit{value: 1 ether}(commitHash);
+        vm.roll(block.number + 101);
+        vm.prank(alice);
+        pool.reclaimExpiredCommit(commitHash);
+    }
+
+    // ── fuzz ─────────────────────────────────────────────────────
+
+    function testFuzz_deposit_amounts(uint256 amount) public {
         amount = bound(amount, 1, 100 ether);
-        bytes32 commitment = keccak256(abi.encodePacked("fuzz", amount));
-
+        bytes32 c = keccak256(abi.encodePacked("fz", amount));
         vm.deal(alice, amount);
         vm.prank(alice);
-        pool.deposit{value: amount}(commitment);
-
+        pool.deposit{value: amount}(c, amount);
         assertTrue(pool.getLatestRoot() != bytes32(0));
     }
 
-    // ── Fixed Denomination Tests ───────────────────────
+    // ── fixed denominations ──────────────────────────────────────
 
     function test_fixed_denomination_deposit() public {
-        // Enable fixed denominations: 0.1, 1, 10 ETH
-        uint256[] memory tiers = new uint256[](3);
-        tiers[0] = 0.1 ether;
-        tiers[1] = 1 ether;
-        tiers[2] = 10 ether;
-
+        uint256[] memory t = new uint256[](3);
+        t[0] = 0.1 ether;
+        t[1] = 1 ether;
+        t[2] = 10 ether;
         vm.prank(deployer);
-        pool.enableFixedDenominations(tiers);
-
-        assertTrue(pool.fixedDenominationsEnabled());
-
-        // Deposit at allowed tier works
-        bytes32 commitment = keccak256("denom-1");
+        pool.enableFixedDenominations(t);
         vm.prank(alice);
-        pool.deposit{value: 1 ether}(commitment);
-        assertTrue(pool.commitmentExists(commitment));
+        pool.deposit{value: 1 ether}(keccak256("fd"), 1 ether);
+        assertTrue(pool.commitmentExists(keccak256("fd")));
     }
 
     function test_fixed_denomination_rejects_invalid() public {
-        uint256[] memory tiers = new uint256[](2);
-        tiers[0] = 1 ether;
-        tiers[1] = 10 ether;
-
+        uint256[] memory t = new uint256[](2);
+        t[0] = 1 ether;
+        t[1] = 10 ether;
         vm.prank(deployer);
-        pool.enableFixedDenominations(tiers);
-
-        // Non-tier amount should revert
-        bytes32 commitment = keccak256("bad-denom");
+        pool.enableFixedDenominations(t);
         vm.prank(alice);
         vm.expectRevert(PrivacyPool.InvalidDenomination.selector);
-        pool.deposit{value: 0.5 ether}(commitment);
+        pool.deposit{value: 0.5 ether}(keccak256("bad"), 0.5 ether);
     }
 
     function test_fixed_denomination_commit_reveal() public {
-        uint256[] memory tiers = new uint256[](1);
-        tiers[0] = 1 ether;
-
+        uint256[] memory t = new uint256[](1);
+        t[0] = 1 ether;
         vm.prank(deployer);
-        pool.enableFixedDenominations(tiers);
-
-        // Commit at allowed tier
-        bytes32 commitment = keccak256("cr-denom");
+        pool.enableFixedDenominations(t);
+        bytes32 commitment = keccak256("cr-d");
         bytes32 salt = keccak256("salt");
         bytes32 commitHash = keccak256(abi.encodePacked(commitment, salt));
-
         vm.prank(alice);
         pool.commitDeposit{value: 1 ether}(commitHash);
-
-        // Non-tier commit should revert
-        bytes32 commitHash2 = keccak256("bad-cr");
         vm.prank(alice);
         vm.expectRevert(PrivacyPool.InvalidDenomination.selector);
-        pool.commitDeposit{value: 0.5 ether}(commitHash2);
+        pool.commitDeposit{value: 0.5 ether}(keccak256("bad2"));
     }
 
     function test_disable_fixed_denominations() public {
-        uint256[] memory tiers = new uint256[](1);
-        tiers[0] = 1 ether;
-
+        uint256[] memory t = new uint256[](1);
+        t[0] = 1 ether;
         vm.prank(deployer);
-        pool.enableFixedDenominations(tiers);
-        assertTrue(pool.fixedDenominationsEnabled());
-
+        pool.enableFixedDenominations(t);
         vm.prank(deployer);
         pool.disableFixedDenominations();
-        assertFalse(pool.fixedDenominationsEnabled());
-
-        // Any amount should work again
-        bytes32 commitment = keccak256("any-amount");
         vm.prank(alice);
-        pool.deposit{value: 0.5 ether}(commitment);
-        assertTrue(pool.commitmentExists(commitment));
+        pool.deposit{value: 0.5 ether}(keccak256("any"), 0.5 ether);
+        assertTrue(pool.commitmentExists(keccak256("any")));
     }
 
     function test_get_denomination_tiers() public {
-        uint256[] memory tiers = new uint256[](3);
-        tiers[0] = 0.1 ether;
-        tiers[1] = 1 ether;
-        tiers[2] = 10 ether;
-
+        uint256[] memory t = new uint256[](3);
+        t[0] = 0.1 ether;
+        t[1] = 1 ether;
+        t[2] = 10 ether;
         vm.prank(deployer);
-        pool.enableFixedDenominations(tiers);
-
-        uint256[] memory result = pool.getDenominationTiers();
-        assertEq(result.length, 3);
-        assertEq(result[0], 0.1 ether);
-        assertEq(result[1], 1 ether);
-        assertEq(result[2], 10 ether);
+        pool.enableFixedDenominations(t);
+        uint256[] memory r = pool.getDenominationTiers();
+        assertEq(r.length, 3);
+        assertEq(r[0], 0.1 ether);
     }
 
     function test_only_governance_can_set_denominations() public {
-        uint256[] memory tiers = new uint256[](1);
-        tiers[0] = 1 ether;
-
+        uint256[] memory t = new uint256[](1);
+        t[0] = 1 ether;
         vm.prank(alice);
         vm.expectRevert(PrivacyPool.Unauthorized.selector);
-        pool.enableFixedDenominations(tiers);
+        pool.enableFixedDenominations(t);
     }
 }

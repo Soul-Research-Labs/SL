@@ -11,12 +11,12 @@ Substrate (Astar), Cosmos (Evmos), and NEAR (Aurora) — requiring cross-chain
 message passing to synchronize epoch roots and relay shielded transfers. Each
 ecosystem uses a different bridging primitive:
 
-| Bridge              | Protocol        | Chains                    |
-|---------------------|-----------------|---------------------------|
-| Teleporter/AWM      | BLS multisig    | Avalanche ↔ Moonbeam      |
-| XCM                 | Relay-chain     | Moonbeam ↔ Astar          |
-| IBC                 | Light-client    | Evmos ↔ Avalanche/Moonbeam|
-| Rainbow Bridge      | Light-client    | Aurora ↔ Avalanche/Moonbeam|
+| Bridge         | Protocol     | Chains                      |
+| -------------- | ------------ | --------------------------- |
+| Teleporter/AWM | BLS multisig | Avalanche ↔ Moonbeam        |
+| XCM            | Relay-chain  | Moonbeam ↔ Astar            |
+| IBC            | Light-client | Evmos ↔ Avalanche/Moonbeam  |
+| Rainbow Bridge | Light-client | Aurora ↔ Avalanche/Moonbeam |
 
 The trust model for cross-chain operations differs fundamentally from the
 trust model for on-chain operations, and must be explicitly designed.
@@ -35,6 +35,7 @@ trust model for on-chain operations, and must be explicitly designed.
    governance can update the authorized source chain/contract addresses.
 
 3. **Messages carry a Merkle root and epoch number**. The payload structure is:
+
    ```
    struct EpochSync {
        uint64 epochNumber;
@@ -55,12 +56,12 @@ trust model for on-chain operations, and must be explicitly designed.
 
 ### Trust Assumptions per Bridge
 
-| Bridge         | Trust Assumption                                  | Verification     |
-|----------------|---------------------------------------------------|------------------|
-| Teleporter/AWM | Avalanche P-chain BLS stake-weighted multisig     | Warp precompile  |
-| XCM            | Polkadot relay chain consensus                    | HRMP channel     |
-| IBC            | Light-client header verification                  | Tendermint LC    |
-| Rainbow Bridge | Ethereum/NEAR light-client on both sides          | Header relay     |
+| Bridge         | Trust Assumption                              | Verification    |
+| -------------- | --------------------------------------------- | --------------- |
+| Teleporter/AWM | Avalanche P-chain BLS stake-weighted multisig | Warp precompile |
+| XCM            | Polkadot relay chain consensus                | HRMP channel    |
+| IBC            | Light-client header verification              | Tendermint LC   |
+| Rainbow Bridge | Ethereum/NEAR light-client on both sides      | Header relay    |
 
 ### Future: Light-Client Verification
 

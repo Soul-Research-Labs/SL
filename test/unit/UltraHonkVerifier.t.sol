@@ -10,7 +10,7 @@ contract UltraHonkVerifierUnitTest is Test {
 
     function setUp() public {
         governance = address(this);
-        verifier = new UltraHonkVerifier(governance);
+        verifier = new UltraHonkVerifier();
     }
 
     // ── Proving System ─────────────────────────────────

@@ -102,16 +102,8 @@ contract StealthAddressTest is Test {
         uint256 val = 1 ether;
         bytes32 blinding = bytes32(uint256(777));
 
-        bytes32 c1 = StealthAddress.computeStealthCommitment(
-            sa,
-            val,
-            blinding
-        );
-        bytes32 c2 = StealthAddress.computeStealthCommitment(
-            sa,
-            val,
-            blinding
-        );
+        bytes32 c1 = StealthAddress.computeStealthCommitment(sa, val, blinding);
+        bytes32 c2 = StealthAddress.computeStealthCommitment(sa, val, blinding);
         assertEq(c1, c2);
     }
 
@@ -120,11 +112,7 @@ contract StealthAddressTest is Test {
         uint256 val = 42;
         bytes32 blinding = bytes32(uint256(100));
 
-        bytes32 c = StealthAddress.computeStealthCommitment(
-            sa,
-            val,
-            blinding
-        );
+        bytes32 c = StealthAddress.computeStealthCommitment(sa, val, blinding);
         uint256 expected = PoseidonHasher.hash3(
             uint256(uint160(sa)),
             val,
@@ -147,7 +135,10 @@ contract StealthAddressTest is Test {
             2 ether,
             blinding
         );
-        assertTrue(c1 != c2, "Different values must give different commitments");
+        assertTrue(
+            c1 != c2,
+            "Different values must give different commitments"
+        );
     }
 
     function test_stealthCommitment_different_blinding() public pure {

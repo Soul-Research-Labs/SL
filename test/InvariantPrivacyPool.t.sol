@@ -166,7 +166,7 @@ contract InvariantPrivacyPool is Test {
 
     function setUp() public {
         verifier = new InvariantMockVerifier();
-        epochManager = new EpochManager(300);
+        epochManager = new EpochManager(300, 43113);
         pool = new PrivacyPool(
             address(verifier),
             address(epochManager),
@@ -234,7 +234,7 @@ contract FuzzPrivacyPool is Test {
 
     function setUp() public {
         verifier = new InvariantMockVerifier();
-        epochManager = new EpochManager(300);
+        epochManager = new EpochManager(300, 43113);
         pool = new PrivacyPool(
             address(verifier),
             address(epochManager),

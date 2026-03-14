@@ -233,13 +233,39 @@ contract EpochManager is IEpochManager {
         if (count == 0) return bytes32(0);
         if (count == 1) return nullifiers[0];
 
-        // Simple iterative hashing (for small sets; production would use a proper tree)
-        bytes32 current = nullifiers[0];
-        for (uint256 i = 1; i < count; i++) {
-            current = bytes32(
-                PoseidonHasher.hash(uint256(current), uint256(nullifiers[i]))
-            );
+        // Build a proper binary Merkle tree (bottom-up).
+        // Pad to next power of two so every level is balanced.
+        uint256 n = _nextPowerOfTwo(count);
+        bytes32[] memory layer = new bytes32[](n);
+
+        // Copy leaves; pad remainder with zero
+        for (uint256 i = 0; i < count; i++) {
+            layer[i] = nullifiers[i];
         }
-        return current;
+
+        // Reduce layer by layer until a single root remains
+        while (n > 1) {
+            uint256 half = n / 2;
+            for (uint256 i = 0; i < half; i++) {
+                layer[i] = bytes32(
+                    PoseidonHasher.hash(
+                        uint256(layer[2 * i]),
+                        uint256(layer[2 * i + 1])
+                    )
+                );
+            }
+            n = half;
+        }
+        return layer[0];
+    }
+
+    /// @dev Returns the smallest power of 2 >= x (minimum 2).
+    function _nextPowerOfTwo(uint256 x) private pure returns (uint256) {
+        if (x <= 2) return 2;
+        uint256 p = 1;
+        while (p < x) {
+            p <<= 1;
+        }
+        return p;
     }
 }

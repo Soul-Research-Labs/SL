@@ -509,4 +509,68 @@ contract MultiSigGovernanceTest is Test {
         assertTrue(ok);
         assertEq(address(msig).balance, 1 ether);
     }
+
+    // ── Threshold-per-proposal Tests ───────────────────
+
+    function test_threshold_stored_per_proposal() public {
+        // Submit proposal when threshold is 2
+        bytes memory data = abi.encodeCall(Counter.increment, ());
+        vm.prank(owner1);
+        uint256 pid = msig.submitProposal(address(counter), 0, data);
+
+        // Change threshold to 1 via self-call
+        bytes memory changeData = abi.encodeCall(
+            MultiSigGovernance.changeThreshold,
+            (1)
+        );
+        vm.prank(owner1);
+        uint256 changePid = msig.submitProposal(address(msig), 0, changeData);
+        vm.prank(owner2);
+        msig.confirmProposal(changePid);
+        vm.prank(owner1);
+        msig.executeProposal(changePid);
+        assertEq(msig.threshold(), 1);
+
+        // The old proposal (pid=0) should still require 2 confirmations
+        // (its snapshot was taken at threshold=2)
+        vm.prank(owner1);
+        vm.expectRevert(MultiSigGovernance.InsufficientConfirmations.selector);
+        msig.executeProposal(pid); // only 1 confirmation, needs 2
+
+        // After confirming with owner2, it should work
+        vm.prank(owner2);
+        msig.confirmProposal(pid);
+        vm.prank(owner1);
+        msig.executeProposal(pid);
+        assertEq(counter.value(), 1);
+    }
+
+    function test_threshold_increase_does_not_affect_old_proposals() public {
+        // Submit proposal when threshold is 2
+        bytes memory data = abi.encodeCall(Counter.increment, ());
+        vm.prank(owner1);
+        uint256 pid = msig.submitProposal(address(counter), 0, data);
+        vm.prank(owner2);
+        msig.confirmProposal(pid); // now has 2 confirmations
+
+        // Increase threshold to 3 via self-call
+        bytes memory changeData = abi.encodeCall(
+            MultiSigGovernance.changeThreshold,
+            (3)
+        );
+        vm.prank(owner1);
+        uint256 changePid = msig.submitProposal(address(msig), 0, changeData);
+        vm.prank(owner2);
+        msig.confirmProposal(changePid);
+        vm.prank(owner1);
+        msig.executeProposal(changePid);
+        assertEq(msig.threshold(), 3);
+
+        // Old proposal should still be executable with 2 confirmations
+        // because its requiredThreshold was snapshot at 2
+        assertTrue(msig.isExecutable(pid));
+        vm.prank(owner1);
+        msig.executeProposal(pid);
+        assertEq(counter.value(), 1);
+    }
 }

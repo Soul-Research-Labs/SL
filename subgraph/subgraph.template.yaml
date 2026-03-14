@@ -7,11 +7,11 @@ schema:
 dataSources:
   - kind: ethereum/contract
     name: PrivacyPool
-    network: {{NETWORK}}
+    network: { { NETWORK } }
     source:
       abi: PrivacyPool
       address: "{{PRIVACY_POOL}}"
-      startBlock: {{START_BLOCK}}
+      startBlock: { { START_BLOCK } }
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -42,11 +42,11 @@ dataSources:
 
   - kind: ethereum/contract
     name: EpochManager
-    network: {{NETWORK}}
+    network: { { NETWORK } }
     source:
       abi: EpochManager
       address: "{{EPOCH_MANAGER}}"
-      startBlock: {{START_BLOCK}}
+      startBlock: { { START_BLOCK } }
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -69,11 +69,11 @@ dataSources:
 
   - kind: ethereum/contract
     name: GovernanceTimelock
-    network: {{NETWORK}}
+    network: { { NETWORK } }
     source:
       abi: GovernanceTimelock
       address: "{{GOVERNANCE_TIMELOCK}}"
-      startBlock: {{START_BLOCK}}
+      startBlock: { { START_BLOCK } }
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

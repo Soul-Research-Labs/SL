@@ -248,22 +248,24 @@ contract Halo2SnarkVerifier is IProofVerifier {
         // e(-A, B) * e(alpha, beta) * e(vk_x, gamma) * e(C, delta) == 1
         return
             _pairingCheck(
-                a_x,
-                a_y,
-                b_x,
-                b_y,
-                vk.alpha_x,
-                vk.alpha_y,
-                vk.beta_x,
-                vk.beta_y,
-                vk_x_x,
-                vk_x_y,
-                vk.gamma_x,
-                vk.gamma_y,
-                c_x,
-                c_y,
-                vk.delta_x,
-                vk.delta_y
+                PairingInput({
+                    a_x: a_x,
+                    a_y: a_y,
+                    b_x: b_x,
+                    b_y: b_y,
+                    alpha_x: vk.alpha_x,
+                    alpha_y: vk.alpha_y,
+                    beta_x: vk.beta_x,
+                    beta_y: vk.beta_y,
+                    vkx_x: vk_x_x,
+                    vkx_y: vk_x_y,
+                    gamma_x: vk.gamma_x,
+                    gamma_y: vk.gamma_y,
+                    c_x: c_x,
+                    c_y: c_y,
+                    delta_x: vk.delta_x,
+                    delta_y: vk.delta_y
+                })
             );
     }
 
@@ -329,59 +331,62 @@ contract Halo2SnarkVerifier is IProofVerifier {
     }
 
     /// @dev BN254 pairing precompile (address 0x08)
-    function _pairingCheck(
-        uint256 a_x,
-        uint256 a_y,
-        uint256[2] memory b_x,
-        uint256[2] memory b_y,
-        uint256 alpha_x,
-        uint256 alpha_y,
-        uint256[2] memory beta_x,
-        uint256[2] memory beta_y,
-        uint256 vkx_x,
-        uint256 vkx_y,
-        uint256[2] memory gamma_x,
-        uint256[2] memory gamma_y,
-        uint256 c_x,
-        uint256 c_y,
-        uint256[2] memory delta_x,
-        uint256[2] memory delta_y
-    ) private view returns (bool) {
+    /// Packed struct to avoid stack-too-deep with via_ir.
+    struct PairingInput {
+        uint256 a_x;
+        uint256 a_y;
+        uint256[2] b_x;
+        uint256[2] b_y;
+        uint256 alpha_x;
+        uint256 alpha_y;
+        uint256[2] beta_x;
+        uint256[2] beta_y;
+        uint256 vkx_x;
+        uint256 vkx_y;
+        uint256[2] gamma_x;
+        uint256[2] gamma_y;
+        uint256 c_x;
+        uint256 c_y;
+        uint256[2] delta_x;
+        uint256[2] delta_y;
+    }
+
+    function _pairingCheck(PairingInput memory p) private view returns (bool) {
         // Negate A (negate y coordinate)
-        uint256 neg_a_y = (PRIME_Q - a_y) % PRIME_Q;
+        uint256 neg_a_y = (PRIME_Q - p.a_y) % PRIME_Q;
 
         uint256[24] memory input;
         // Pair 1: e(-A, B)
-        input[0] = a_x;
+        input[0] = p.a_x;
         input[1] = neg_a_y;
-        input[2] = b_x[1];
-        input[3] = b_x[0];
-        input[4] = b_y[1];
-        input[5] = b_y[0];
+        input[2] = p.b_x[1];
+        input[3] = p.b_x[0];
+        input[4] = p.b_y[1];
+        input[5] = p.b_y[0];
         // Pair 2: e(alpha, beta)
-        input[6] = alpha_x;
-        input[7] = alpha_y;
-        input[8] = beta_x[1];
-        input[9] = beta_x[0];
-        input[10] = beta_y[1];
-        input[11] = beta_y[0];
+        input[6] = p.alpha_x;
+        input[7] = p.alpha_y;
+        input[8] = p.beta_x[1];
+        input[9] = p.beta_x[0];
+        input[10] = p.beta_y[1];
+        input[11] = p.beta_y[0];
         // Pair 3: e(vk_x, gamma)
-        input[12] = vkx_x;
-        input[13] = vkx_y;
-        input[14] = gamma_x[1];
-        input[15] = gamma_x[0];
-        input[16] = gamma_y[1];
-        input[17] = gamma_y[0];
+        input[12] = p.vkx_x;
+        input[13] = p.vkx_y;
+        input[14] = p.gamma_x[1];
+        input[15] = p.gamma_x[0];
+        input[16] = p.gamma_y[1];
+        input[17] = p.gamma_y[0];
         // Pair 4: e(C, delta)
-        input[18] = c_x;
-        input[19] = c_y;
-        input[20] = delta_x[1];
-        input[21] = delta_x[0];
-        input[22] = delta_y[1];
-        input[23] = delta_y[0];
+        input[18] = p.c_x;
+        input[19] = p.c_y;
+        input[20] = p.delta_x[1];
+        input[21] = p.delta_x[0];
+        input[22] = p.delta_y[1];
+        input[23] = p.delta_y[0];
 
         uint256[1] memory result;
-        assembly {
+        assembly ("memory-safe") {
             if iszero(staticcall(gas(), 0x08, input, 0x300, result, 0x20)) {
                 revert(0, 0)
             }

@@ -57,7 +57,7 @@ contract PoseidonFuzzTest is Test {
         uint256 h2 = harness.hash(b, a);
         assertTrue(
             h1 != h2,
-            "hash(a,b) == hash(b,a) — broken non-commutativity"
+            "hash(a,b) == hash(b,a) -- broken non-commutativity"
         );
     }
 

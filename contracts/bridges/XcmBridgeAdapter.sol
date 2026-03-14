@@ -19,7 +19,7 @@ contract XcmBridgeAdapter is IBridgeAdapter {
 
     /// @notice XCM precompile (for sending raw XCM messages)
     address internal constant XCM_PRECOMPILE =
-        0x000000000000000000000000000000000000080A;
+        0x000000000000000000000000000000000000080a;
 
     /// @notice Batch precompile (for atomic multi-call operations)
     address internal constant BATCH_PRECOMPILE =

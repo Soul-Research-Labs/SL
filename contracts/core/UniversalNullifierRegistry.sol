@@ -179,14 +179,21 @@ contract UniversalNullifierRegistry {
         bytes32 nullifierRoot,
         uint256 nullifierCount
     ) external onlyAuthorizedBridge(chainId) {
-        // Ensure sequential epoch submission
+        // Ensure sequential epoch submission (first epoch must be 0)
         ChainRegistration storage reg = chains[chainId];
-        if (epochId != reg.latestEpochId + 1 && reg.latestEpochId != 0) {
-            revert InvalidEpochSequence(
-                chainId,
-                reg.latestEpochId + 1,
-                epochId
-            );
+        if (reg.latestEpochRoot == bytes32(0) && reg.latestEpochId == 0) {
+            // First ever submission for this chain — must start at epoch 0
+            if (epochId != 0) {
+                revert InvalidEpochSequence(chainId, 0, epochId);
+            }
+        } else {
+            if (epochId != reg.latestEpochId + 1) {
+                revert InvalidEpochSequence(
+                    chainId,
+                    reg.latestEpochId + 1,
+                    epochId
+                );
+            }
         }
         if (epochRoots[chainId][epochId] != bytes32(0)) {
             revert EpochAlreadyRecorded(chainId, epochId);
@@ -323,6 +330,9 @@ contract UniversalNullifierRegistry {
         return snapshots.length;
     }
 
+    /// @dev Maximum depth for Merkle inclusion proofs (matching tree depth)
+    uint256 public constant MAX_PROOF_DEPTH = 32;
+
     // ── Internal ───────────────────────────────────────────────────────
 
     /// @dev Verify a Merkle inclusion proof against a root
@@ -333,9 +343,12 @@ contract UniversalNullifierRegistry {
         uint256[] calldata pathIndices
     ) internal pure returns (bool) {
         if (proof.length != pathIndices.length) return false;
+        if (proof.length == 0) return false;
+        if (proof.length > MAX_PROOF_DEPTH) return false;
 
         bytes32 current = leaf;
         for (uint256 i = 0; i < proof.length; i++) {
+            if (pathIndices[i] > 1) return false; // must be 0 or 1
             if (pathIndices[i] == 0) {
                 current = bytes32(
                     PoseidonHasher.hash(uint256(current), uint256(proof[i]))

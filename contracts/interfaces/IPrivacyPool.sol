@@ -45,7 +45,11 @@ interface IPrivacyPool {
     event DepositRevealed(bytes32 indexed commitment, uint256 value);
 
     /// @notice Emitted when an expired commit is reclaimed
-    event CommitReclaimed(bytes32 indexed commitHash, address indexed depositor, uint256 value);
+    event CommitReclaimed(
+        bytes32 indexed commitHash,
+        address indexed depositor,
+        uint256 value
+    );
 
     /// @notice Submit the first phase of a commit-reveal deposit
     /// @param commitHash keccak256(abi.encodePacked(commitment, salt))

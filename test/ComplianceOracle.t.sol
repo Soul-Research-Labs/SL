@@ -61,11 +61,7 @@ contract ComplianceOracleTest is Test {
     // ── checkCompliance basics ─────────────────────────────────────
 
     function test_compliance_passes_clean_tx() public view {
-        bool ok = oracle.checkCompliance(
-            dummyNullifiers,
-            dummyCommitments,
-            ""
-        );
+        bool ok = oracle.checkCompliance(dummyNullifiers, dummyCommitments, "");
         assertTrue(ok);
     }
 
@@ -73,11 +69,7 @@ contract ComplianceOracleTest is Test {
         oracle.setComplianceEnabled(false);
         // Even with blocked nullifiers, should pass when disabled
         oracle.blockCommitment(dummyNullifiers[0], "tainted");
-        bool ok = oracle.checkCompliance(
-            dummyNullifiers,
-            dummyCommitments,
-            ""
-        );
+        bool ok = oracle.checkCompliance(dummyNullifiers, dummyCommitments, "");
         assertTrue(ok);
     }
 
@@ -100,21 +92,13 @@ contract ComplianceOracleTest is Test {
 
     function test_blockCommitment_nullifier_blocks_tx() public {
         oracle.blockCommitment(dummyNullifiers[0], "tainted");
-        bool ok = oracle.checkCompliance(
-            dummyNullifiers,
-            dummyCommitments,
-            ""
-        );
+        bool ok = oracle.checkCompliance(dummyNullifiers, dummyCommitments, "");
         assertFalse(ok);
     }
 
     function test_blockCommitment_output_blocks_tx() public {
         oracle.blockCommitment(dummyCommitments[1], "tainted");
-        bool ok = oracle.checkCompliance(
-            dummyNullifiers,
-            dummyCommitments,
-            ""
-        );
+        bool ok = oracle.checkCompliance(dummyNullifiers, dummyCommitments, "");
         assertFalse(ok);
     }
 
@@ -168,7 +152,7 @@ contract ComplianceOracleTest is Test {
     }
 
     function test_transferGovernance() public {
-        address newGov = address(0xNEEEEE1);
+        address newGov = address(0xDE1);
         oracle.transferGovernance(newGov);
         assertEq(oracle.governance(), newGov);
     }
@@ -259,11 +243,7 @@ contract ComplianceOracleTest is Test {
         // Less than 33 bytes with a verifier set
         bytes memory shortProof = hex"ABCD";
         vm.expectRevert("ComplianceOracle: proof too short");
-        oracle.checkCompliance(
-            dummyNullifiers,
-            dummyCommitments,
-            shortProof
-        );
+        oracle.checkCompliance(dummyNullifiers, dummyCommitments, shortProof);
     }
 
     // ── setViewingKeyVerifier ──────────────────────────────────────

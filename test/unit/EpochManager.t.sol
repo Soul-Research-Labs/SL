@@ -56,6 +56,7 @@ contract EpochManagerUnitTest is Test {
     }
 
     function test_startNewEpoch() public {
+        vm.warp(block.timestamp + EPOCH_DURATION + 1);
         em.startNewEpoch();
         assertEq(em.currentEpochId(), 1);
     }

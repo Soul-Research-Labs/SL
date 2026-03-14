@@ -117,14 +117,8 @@ contract TransientStorageTest is Test {
     }
 
     function test_deriveSlot_bytes32_different_keys() public pure {
-        uint256 s1 = TransientStorage.deriveSlot(
-            SLOT_E,
-            bytes32(uint256(1))
-        );
-        uint256 s2 = TransientStorage.deriveSlot(
-            SLOT_E,
-            bytes32(uint256(2))
-        );
+        uint256 s1 = TransientStorage.deriveSlot(SLOT_E, bytes32(uint256(1)));
+        uint256 s2 = TransientStorage.deriveSlot(SLOT_E, bytes32(uint256(2)));
         assertTrue(s1 != s2);
     }
 
@@ -156,14 +150,10 @@ contract GuardedContract is TransientReentrancyGuard {
         counter += 1;
     }
 
-    function guardedReenter(
-        address target
-    ) external nonReentrantTransient {
+    function guardedReenter(address target) external nonReentrantTransient {
         counter += 1;
         // Attempt reentrant call
-        (bool success, ) = target.call(
-            abi.encodeWithSignature("guarded()")
-        );
+        (bool success, ) = target.call(abi.encodeWithSignature("guarded()"));
         // The inner call should revert, but we swallow it to test
         require(!success, "Reentrant call should have failed");
     }

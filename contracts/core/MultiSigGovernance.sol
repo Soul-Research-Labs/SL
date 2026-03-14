@@ -14,6 +14,7 @@ contract MultiSigGovernance {
         uint256 value;
         bytes data;
         uint256 confirmationCount;
+        uint256 requiredThreshold; // snapshot threshold at creation time
         bool executed;
     }
 
@@ -126,6 +127,7 @@ contract MultiSigGovernance {
             value: value,
             data: data,
             confirmationCount: 1,
+            requiredThreshold: threshold,
             executed: false
         });
 
@@ -169,7 +171,8 @@ contract MultiSigGovernance {
     ) external onlyOwner proposalExists(proposalId) {
         Proposal storage p = proposals[proposalId];
         if (p.executed) revert ProposalAlreadyExecuted();
-        if (p.confirmationCount < threshold) revert InsufficientConfirmations();
+        if (p.confirmationCount < p.requiredThreshold)
+            revert InsufficientConfirmations();
 
         p.executed = true;
 
@@ -251,7 +254,7 @@ contract MultiSigGovernance {
     /// @notice Check if a proposal is executable.
     function isExecutable(uint256 proposalId) external view returns (bool) {
         Proposal storage p = proposals[proposalId];
-        return !p.executed && p.confirmationCount >= threshold;
+        return !p.executed && p.confirmationCount >= p.requiredThreshold;
     }
 
     /// @notice Receive ETH for proposals that need to send value.

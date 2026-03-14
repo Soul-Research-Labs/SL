@@ -7,14 +7,14 @@
 
 ## Key Inventory
 
-| Key Role               | Access Level       | Storage         | Rotation Cadence | Holders                   |
-| ---------------------- | ------------------ | --------------- | ---------------- | ------------------------- |
-| Deployer EOA           | Full admin (temp)  | Hardware wallet | Once (not reused)| Deployment team           |
-| Governance Multisig    | Admin (timelock)   | Hardware wallets| N/A (signers)    | 5+ governance signers     |
-| Guardian (Pause)       | Emergency pause    | Cold storage    | Annually         | Security team             |
-| Relayer Submission Key | submitProof, epoch | Secrets manager | Quarterly        | Automated (no human use)  |
-| Lumora Signing Key     | Proof submission   | Secrets manager | Quarterly        | Automated                 |
-| Subgraph Deploy Token  | Subgraph deploy    | CI secrets      | On compromise    | Deploy pipeline           |
+| Key Role               | Access Level       | Storage          | Rotation Cadence  | Holders                  |
+| ---------------------- | ------------------ | ---------------- | ----------------- | ------------------------ |
+| Deployer EOA           | Full admin (temp)  | Hardware wallet  | Once (not reused) | Deployment team          |
+| Governance Multisig    | Admin (timelock)   | Hardware wallets | N/A (signers)     | 5+ governance signers    |
+| Guardian (Pause)       | Emergency pause    | Cold storage     | Annually          | Security team            |
+| Relayer Submission Key | submitProof, epoch | Secrets manager  | Quarterly         | Automated (no human use) |
+| Lumora Signing Key     | Proof submission   | Secrets manager  | Quarterly         | Automated                |
+| Subgraph Deploy Token  | Subgraph deploy    | CI secrets       | On compromise     | Deploy pipeline          |
 
 ---
 
@@ -60,6 +60,7 @@ secret_path = "secret/data/relayer/submission-key"
 ### Relayer Key Rotation (Quarterly)
 
 **Pre-rotation checklist:**
+
 - [ ] New key generated in secrets manager
 - [ ] New key funded on all target chains (>0.1 native token per chain)
 - [ ] Maintenance window scheduled (rotation requires brief pause)
@@ -188,14 +189,14 @@ sha256sum keys/withdraw.pk
 
 ## Access Control Matrix
 
-| Action                     | Deployer (temp) | Governance | Guardian | Relayer | Lumora |
-| -------------------------- | --------------- | ---------- | -------- | ------- | ------ |
-| Deploy contracts           | ✅               | —          | —        | —       | —      |
-| Upgrade parameters         | —               | ✅ (timelock)| —       | —       | —      |
-| Emergency pause            | —               | ✅          | ✅       | —       | —      |
-| Submit proofs on-chain     | —               | —          | —        | ✅      | —      |
-| Advance epochs             | —               | —          | —        | ✅      | —      |
-| Generate ZK proofs         | —               | —          | —        | —       | ✅     |
-| Set denominations          | —               | ✅ (timelock)| —       | —       | —      |
-| Withdraw from FeeVault     | —               | ✅ (timelock)| —       | —       | —      |
-| Register cross-chain route | —               | ✅ (timelock)| —       | —       | —      |
+| Action                     | Deployer (temp) | Governance    | Guardian | Relayer | Lumora |
+| -------------------------- | --------------- | ------------- | -------- | ------- | ------ |
+| Deploy contracts           | ✅              | —             | —        | —       | —      |
+| Upgrade parameters         | —               | ✅ (timelock) | —        | —       | —      |
+| Emergency pause            | —               | ✅            | ✅       | —       | —      |
+| Submit proofs on-chain     | —               | —             | —        | ✅      | —      |
+| Advance epochs             | —               | —             | —        | ✅      | —      |
+| Generate ZK proofs         | —               | —             | —        | —       | ✅     |
+| Set denominations          | —               | ✅ (timelock) | —        | —       | —      |
+| Withdraw from FeeVault     | —               | ✅ (timelock) | —        | —       | —      |
+| Register cross-chain route | —               | ✅ (timelock) | —        | —       | —      |

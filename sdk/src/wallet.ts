@@ -357,14 +357,21 @@ function bytesToBase64(bytes: Uint8Array): string {
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary);
+  // Use globalThis for cross-platform compatibility (Node.js + browser)
+  if (typeof globalThis.btoa === "function") {
+    return globalThis.btoa(binary);
+  }
+  return Buffer.from(bytes).toString("base64");
 }
 
 function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+  if (typeof globalThis.atob === "function") {
+    const binary = globalThis.atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
   }
-  return bytes;
+  return new Uint8Array(Buffer.from(b64, "base64"));
 }

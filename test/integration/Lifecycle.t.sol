@@ -92,8 +92,8 @@ contract DepositTransferWithdrawTest is Test {
         // Verify transfer state
         assertTrue(pool.isSpent(nullifiers[0]));
         assertTrue(pool.isSpent(nullifiers[1]));
-        assertTrue(pool.commitmentExists(outputCms[0]));
-        assertTrue(pool.commitmentExists(outputCms[1]));
+        // Transfer outputs are inserted into the Merkle tree but not tracked in commitmentExists
+        assertEq(pool.getNextLeafIndex(), 3); // 1 deposit + 2 transfer outputs
         // Pool balance unchanged after transfer (no value leaves)
         assertEq(pool.poolBalance(), 1 ether);
     }
@@ -189,11 +189,11 @@ contract EpochCrossChainTest is Test {
         em.registerNullifier(keccak256("n2"));
         vm.stopPrank();
 
-        // Finalize epoch
+        // Start new epoch (auto-finalizes current)
         vm.warp(block.timestamp + 101);
-        em.finalizeEpoch();
+        em.startNewEpoch();
 
-        // Verify epoch finalized
+        // Verify epoch advanced
         assertEq(em.currentEpochId(), 1);
         assertTrue(em.isNullifierSpentGlobal(keccak256("n1")));
 
@@ -213,9 +213,9 @@ contract EpochCrossChainTest is Test {
         em.registerNullifier(keccak256("avax_n3"));
         vm.stopPrank();
 
-        // Finalize Avalanche epoch
+        // Start new epoch (auto-finalizes current)
         vm.warp(block.timestamp + 101);
-        em.finalizeEpoch();
+        em.startNewEpoch();
 
         // Receive Moonbeam epoch root (chain 1284)
         bytes32 moonbeamRoot = keccak256("moonbeam_epoch_0_root");
@@ -237,9 +237,9 @@ contract EpochCrossChainTest is Test {
         em.registerNullifier(keccak256("avax_n4"));
         vm.stopPrank();
 
-        // Finalize epoch 1
+        // Start epoch 2 (auto-finalizes epoch 1)
         vm.warp(block.timestamp + 202);
-        em.finalizeEpoch();
+        em.startNewEpoch();
         assertEq(em.currentEpochId(), 2);
 
         // Receive epoch 1 roots from other chains

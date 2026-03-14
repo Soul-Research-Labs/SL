@@ -92,6 +92,21 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     error CommitExpired();
     error CommitNotExpired();
     error InvalidDenomination();
+    error DomainMismatch();
+    error InvalidOutputCommitment();
+
+    // ── Reentrancy Guard ───────────────────────────────────────────────
+
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _status = _NOT_ENTERED;
+
+    modifier nonReentrant() {
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+        _status = _ENTERED;
+        _;
+        _status = _NOT_ENTERED;
+    }
 
     // ── Modifiers ──────────────────────────────────────────────────────
 
@@ -174,7 +189,7 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
     }
 
     /// @inheritdoc IPrivacyPool
-    function reclaimExpiredCommit(bytes32 commitHash) external {
+    function reclaimExpiredCommit(bytes32 commitHash) external nonReentrant {
         CommitRecord storage record = pendingCommits[commitHash];
         if (record.depositor != msg.sender) revert NotDepositor();
         if (record.revealed) revert AlreadyRevealed();
@@ -221,8 +236,15 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
         uint256 _domainChainId,
         uint256 _domainAppId
     ) external whenNotPaused {
+        // Validate domain parameters match this pool's deployment
+        if (_domainChainId != domainChainId || _domainAppId != domainAppId)
+            revert DomainMismatch();
+
         // Validate Merkle root
         if (!_tree.isKnownRoot(uint256(merkleRoot))) revert UnknownMerkleRoot();
+
+        // Validate output commitments are non-zero and unique
+        _validateOutputCommitments(outputCommitments);
 
         // Compliance check (if oracle is configured)
         _checkCompliance(nullifiers, outputCommitments, proof);
@@ -266,10 +288,13 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
         bytes32[2] calldata outputCommitments,
         address payable recipient,
         uint256 exitValue
-    ) external whenNotPaused {
+    ) external whenNotPaused nonReentrant {
         if (exitValue == 0) revert InvalidWithdrawAmount();
         if (exitValue > poolBalance) revert InsufficientPoolBalance();
         if (!_tree.isKnownRoot(uint256(merkleRoot))) revert UnknownMerkleRoot();
+
+        // Validate output commitments are non-zero and unique
+        _validateOutputCommitments(outputCommitments);
 
         // Compliance check (if oracle is configured)
         _checkCompliance(nullifiers, outputCommitments, proof);
@@ -461,5 +486,16 @@ contract PrivacyPool is IPrivacyPool, EmergencyPause {
         if (fixedDenominationsEnabled && !allowedDenomination[amount]) {
             revert InvalidDenomination();
         }
+    }
+
+    function _validateOutputCommitments(
+        bytes32[2] calldata outputCommitments
+    ) private pure {
+        if (
+            outputCommitments[0] == bytes32(0) ||
+            outputCommitments[1] == bytes32(0)
+        ) revert InvalidOutputCommitment();
+        if (outputCommitments[0] == outputCommitments[1])
+            revert InvalidOutputCommitment();
     }
 }

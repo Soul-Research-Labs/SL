@@ -11,32 +11,21 @@ import "../contracts/interfaces/IProofVerifier.sol";
 contract BenchmarkVerifier is IProofVerifier {
     function verifyTransferProof(
         bytes calldata,
-        bytes32,
-        bytes32[2] calldata,
-        bytes32[2] calldata,
-        uint256,
-        uint256
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
 
     function verifyWithdrawProof(
         bytes calldata,
-        bytes32,
-        bytes32[2] calldata,
-        bytes32[2] calldata,
-        address,
-        uint256,
-        uint256,
-        uint256
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
 
     function verifyAggregatedProof(
         bytes calldata,
-        bytes32[] calldata,
-        bytes32[] calldata
+        uint256[] calldata
     ) external pure returns (bool) {
         return true;
     }
@@ -61,7 +50,7 @@ contract GasBenchmark is Test {
     function setUp() public {
         vm.startPrank(deployer);
         verifier = new BenchmarkVerifier();
-        epochManager = new EpochManager(100);
+        epochManager = new EpochManager(100, 43113);
         pool = new PrivacyPool(
             address(verifier),
             address(epochManager),
@@ -71,7 +60,7 @@ contract GasBenchmark is Test {
             address(0)
         );
         epochManager.authorizePool(address(pool));
-        registry = new UniversalNullifierRegistry();
+        registry = new UniversalNullifierRegistry(deployer);
         vm.stopPrank();
 
         vm.deal(alice, 1000 ether);
@@ -82,14 +71,15 @@ contract GasBenchmark is Test {
     function test_gas_deposit() public {
         bytes32 commitment = keccak256("benchmark-deposit");
         vm.prank(alice);
-        pool.deposit{value: 1 ether}(commitment);
+        pool.deposit{value: 1 ether}(commitment, 1 ether);
     }
 
     function test_gas_deposit_10_sequential() public {
         vm.startPrank(alice);
         for (uint256 i = 0; i < 10; i++) {
             pool.deposit{value: 0.1 ether}(
-                keccak256(abi.encodePacked("deposit", i))
+                keccak256(abi.encodePacked("deposit", i)),
+                0.1 ether
             );
         }
         vm.stopPrank();
@@ -100,8 +90,8 @@ contract GasBenchmark is Test {
         vm.startPrank(alice);
         bytes32 c1 = keccak256("c1");
         bytes32 c2 = keccak256("c2");
-        pool.deposit{value: 1 ether}(c1);
-        pool.deposit{value: 1 ether}(c2);
+        pool.deposit{value: 1 ether}(c1, 1 ether);
+        pool.deposit{value: 1 ether}(c2, 1 ether);
 
         bytes32 root = pool.getLatestRoot();
         bytes32 nul1 = keccak256("nul1");
@@ -112,7 +102,7 @@ contract GasBenchmark is Test {
         bytes memory proof = new bytes(512);
 
         // Measure transfer gas
-        pool.transfer(proof, root, [nul1, nul2], [out1, out2]);
+        pool.transfer(proof, root, [nul1, nul2], [out1, out2], 43113, 1);
         vm.stopPrank();
     }
 
@@ -120,8 +110,8 @@ contract GasBenchmark is Test {
         vm.startPrank(alice);
         bytes32 c1 = keccak256("w-c1");
         bytes32 c2 = keccak256("w-c2");
-        pool.deposit{value: 2 ether}(c1);
-        pool.deposit{value: 2 ether}(c2);
+        pool.deposit{value: 2 ether}(c1, 2 ether);
+        pool.deposit{value: 2 ether}(c2, 2 ether);
 
         bytes32 root = pool.getLatestRoot();
         bytes32 nul1 = keccak256("w-nul1");
@@ -131,7 +121,14 @@ contract GasBenchmark is Test {
 
         bytes memory proof = new bytes(512);
 
-        pool.withdraw(proof, root, [nul1, nul2], [out1, out2], alice, 1 ether);
+        pool.withdraw(
+            proof,
+            root,
+            [nul1, nul2],
+            [out1, out2],
+            payable(alice),
+            1 ether
+        );
         vm.stopPrank();
     }
 
@@ -200,6 +197,6 @@ contract GasBenchmark is Test {
     // ── EpochManager Benchmarks ────────────────────────────────
 
     function test_gas_epochManager_deploy() public {
-        new EpochManager(100);
+        new EpochManager(100, 43113);
     }
 }

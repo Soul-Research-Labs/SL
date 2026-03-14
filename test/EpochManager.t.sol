@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/core/EpochManager.sol";
+import "../contracts/libraries/PoseidonHasher.sol";
 
 contract EpochManagerTest is Test {
     EpochManager public em;
@@ -259,5 +260,95 @@ contract EpochManagerTest is Test {
 
     function test_getEpochNullifierCount_zero() public view {
         assertEq(em.getEpochNullifierCount(0), 0);
+    }
+
+    // ── Binary Merkle Tree Root Tests ──────────────────
+
+    function test_epoch_root_two_nullifiers_is_binary_tree() public {
+        bytes32 n1 = keccak256("null-a");
+        bytes32 n2 = keccak256("null-b");
+
+        vm.startPrank(pool);
+        em.registerNullifier(n1);
+        em.registerNullifier(n2);
+        vm.stopPrank();
+
+        em.finalizeEpoch();
+
+        // Binary Merkle tree of 2 leaves: root = Poseidon(n1, n2)
+        bytes32 expected = bytes32(
+            PoseidonHasher.hash(uint256(n1), uint256(n2))
+        );
+        assertEq(em.getEpochRoot(0), expected);
+    }
+
+    function test_epoch_root_three_nullifiers_padded_tree() public {
+        bytes32 n1 = keccak256("null-1");
+        bytes32 n2 = keccak256("null-2");
+        bytes32 n3 = keccak256("null-3");
+
+        vm.startPrank(pool);
+        em.registerNullifier(n1);
+        em.registerNullifier(n2);
+        em.registerNullifier(n3);
+        vm.stopPrank();
+
+        em.finalizeEpoch();
+
+        // 3 nullifiers → padded to 4 leaves: [n1, n2, n3, 0]
+        // Layer 1: [Poseidon(n1,n2), Poseidon(n3,0)]
+        // Layer 2: Poseidon(Layer1[0], Layer1[1])
+        bytes32 left = bytes32(PoseidonHasher.hash(uint256(n1), uint256(n2)));
+        bytes32 right = bytes32(PoseidonHasher.hash(uint256(n3), 0));
+        bytes32 expected = bytes32(
+            PoseidonHasher.hash(uint256(left), uint256(right))
+        );
+        assertEq(em.getEpochRoot(0), expected);
+    }
+
+    function test_epoch_root_four_nullifiers() public {
+        bytes32 n1 = keccak256("a");
+        bytes32 n2 = keccak256("b");
+        bytes32 n3 = keccak256("c");
+        bytes32 n4 = keccak256("d");
+
+        vm.startPrank(pool);
+        em.registerNullifier(n1);
+        em.registerNullifier(n2);
+        em.registerNullifier(n3);
+        em.registerNullifier(n4);
+        vm.stopPrank();
+
+        em.finalizeEpoch();
+
+        bytes32 left = bytes32(PoseidonHasher.hash(uint256(n1), uint256(n2)));
+        bytes32 right = bytes32(PoseidonHasher.hash(uint256(n3), uint256(n4)));
+        bytes32 expected = bytes32(
+            PoseidonHasher.hash(uint256(left), uint256(right))
+        );
+        assertEq(em.getEpochRoot(0), expected);
+    }
+
+    function test_epoch_root_deterministic_different_order() public {
+        // Verify that the same nullifiers in different order produce different roots
+        // (tree is position-dependent, not a set hash)
+        EpochManager em2 = new EpochManager(EPOCH_DURATION, DOMAIN_CHAIN_ID);
+        em2.authorizePool(pool);
+
+        bytes32 n1 = keccak256("x");
+        bytes32 n2 = keccak256("y");
+
+        vm.startPrank(pool);
+        em.registerNullifier(n1);
+        em.registerNullifier(n2);
+        em2.registerNullifier(n2);
+        em2.registerNullifier(n1);
+        vm.stopPrank();
+
+        em.finalizeEpoch();
+        em2.finalizeEpoch();
+
+        // Different order should produce different roots
+        assertTrue(em.getEpochRoot(0) != em2.getEpochRoot(0));
     }
 }
